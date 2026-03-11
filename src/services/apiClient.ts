@@ -4,7 +4,7 @@ import { getAccessToken, setAccessToken, removeAccessToken } from "../storage/to
 export { setAccessToken, removeAccessToken };
 
 const apiClient = axios.create({
-    baseURL: process.env.BASE_URL,
+    baseURL: process.env.EXPO_PUBLIC_BASE_URL,
     headers: {
         "Content-Type": "application/json",
     },

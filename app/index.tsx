@@ -34,10 +34,11 @@ export default function Index() {
       return;
     }
     setLoading(true);
+    const formattedCountryCode = `+${countryCode}`;
     try {
-      await generateOtp(countryCode, phoneNumber);
+      await generateOtp(formattedCountryCode, phoneNumber);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      router.push({ pathname: "/otp" as any, params: { countryCode, phone: phoneNumber } });
+      router.push({ pathname: "/otp" as any, params: { countryCode: formattedCountryCode, phone: phoneNumber } });
     } catch {
       Alert.alert("Error", "Failed to send OTP. Please try again.");
     } finally {
@@ -145,7 +146,7 @@ export default function Index() {
           {loading ? (
             <ActivityIndicator color="#000" />
           ) : (
-            <Text style={styles.loginButtonText}>Login</Text>
+            <Text style={styles.loginButtonText}>Send OTP</Text>
           )}
         </LinearGradient>
       </Pressable>

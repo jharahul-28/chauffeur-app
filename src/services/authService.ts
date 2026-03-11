@@ -15,8 +15,10 @@ export interface VerifyOtpResponse {
     };
 }
 
-export const generateOtp = async (countryCode: string, phone: string): Promise<void> => {
-    await apiClient.post('/chauffeurs/auth/otp/generate', { countryCode, phone });
+export const generateOtp = async (countryCode: string, phone: string): Promise<boolean> => {
+    // API returns 204 No Content on success — axios treats 2xx as success, no JSON parsing needed
+    await apiClient.post('/users/chauffeurs/auth/otp/generate', { countryCode, phone });
+    return true;
 };
 
 export const verifyOtp = async (
@@ -24,7 +26,7 @@ export const verifyOtp = async (
     phone: string,
     otp: string
 ): Promise<VerifyOtpResponse> => {
-    const response = await apiClient.post<VerifyOtpResponse>('/chauffeurs/auth/otp/verify', {
+    const response = await apiClient.post<VerifyOtpResponse>('/users/chauffeurs/auth/otp/verify', {
         countryCode,
         phone,
         otp,
