@@ -53,7 +53,7 @@ export default function OtpScreen() {
         try {
             const result = await verifyOtp(countryCode!, phone!, otp.join(''));
             await setAccessToken(result.authToken);
-            router.replace('/(driver)/driver-home');
+            router.replace('/(driver)/(tabs)/bookings');
         } catch {
             setError('OTP is invalid');
             setOtp(['', '', '', '']);

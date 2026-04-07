@@ -12,15 +12,22 @@ export interface Coordinate {
 
 interface MapViewContainerProps {
   driverLocation: DriverLocation | null;
+  pickupLocation?: Coordinate;
+  routeCoordinates?: Coordinate[];
 }
 
-const MapViewContainer: React.FC<MapViewContainerProps> = ({ driverLocation }) => {
+const MapViewContainer: React.FC<MapViewContainerProps> = ({ driverLocation, pickupLocation }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.label}>Map preview not available on web</Text>
       {driverLocation && (
         <Text style={styles.coords}>
-          {driverLocation.latitude.toFixed(5)}, {driverLocation.longitude.toFixed(5)}
+          Driver: {driverLocation.latitude.toFixed(5)}, {driverLocation.longitude.toFixed(5)}
+        </Text>
+      )}
+      {pickupLocation && (
+        <Text style={styles.coords}>
+          Pickup: {pickupLocation.latitude.toFixed(5)}, {pickupLocation.longitude.toFixed(5)}
         </Text>
       )}
     </View>
