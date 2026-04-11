@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RideStatus, Stoppage } from '../types/ride';
+import WaitTimerDisplay from './WaitTimerDisplay';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,18 @@ export interface PickupDrawerProps {
   onArrivedAtPickup: () => void;
   /** Called when driver taps "Enter OTP". */
   onEnterOTP: () => void;
+  /** Called when driver taps "End Trip". */
+  onEndTrip?: () => void;
+  /** Called when driver taps "Wait". */
+  onWait?: () => void;
+  /** Called when driver taps "Resume". */
+  onResumeTrip?: () => void;
+  /** Whether the driver is currently in a wait state. */
+  isWaiting?: boolean;
+  /** Remaining free wait seconds (used for timer display). */
+  remainingWaitTime?: number;
+  /** Whether free wait time has been exceeded. */
+  isFreeTimeExceeded?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -76,6 +89,12 @@ const PickupDrawer = memo(function PickupDrawer({
   stoppages = [],
   onArrivedAtPickup,
   onEnterOTP,
+  onEndTrip,
+  onWait,
+  onResumeTrip,
+  isWaiting = false,
+  remainingWaitTime = 180,
+  isFreeTimeExceeded = false,
 }: PickupDrawerProps) {
   const insets = useSafeAreaInsets();
   const bottomPad = Math.max(insets.bottom, 12);
@@ -83,10 +102,11 @@ const PickupDrawer = memo(function PickupDrawer({
 
   const isTripStarted = rideStatus === 'TRIP_STARTED';
 
-  // Dynamic expanded height: larger for trip-started to fit stoppages list
+  // Dynamic expanded height: larger for trip-started to fit stoppages + wait button + timer
   const expandedHeight = useMemo(() => {
     if (isTripStarted) {
-      return 380 + stoppages.length * 38;
+      // Base: handle + status + rider + end-trip btn + wait btn + timer(when active) + divider + trip details
+      return 500 + stoppages.length * 38;
     }
     return 370;
   }, [isTripStarted, stoppages.length]);
@@ -122,14 +142,16 @@ const PickupDrawer = memo(function PickupDrawer({
   }));
 
   // ── Status label config ──────────────────────────────────────────────────
-  const statusLabel = {
+  const STATUS_LABELS: Record<RideStatus, string> = {
     GOING_TO_PICKUP: 'Going to Pickup',
     ARRIVED_AT_PICKUP: 'Arrived at Pickup',
     OTP_PENDING: 'Verifying OTP...',
     TRIP_STARTED: 'Trip in Progress',
-  }[rideStatus];
+    TRIP_COMPLETED: 'Trip Completed',
+  };
+  const statusLabel = isWaiting ? 'Waiting...' : STATUS_LABELS[rideStatus];
 
-  const statusColor = isTripStarted ? '#30D158' : '#EDB96D';
+  const statusColor = isWaiting ? '#FF9F0A' : isTripStarted ? '#30D158' : '#EDB96D';
 
   return (
     <Animated.View
@@ -170,12 +192,47 @@ const PickupDrawer = memo(function PickupDrawer({
 
       {/* ── CTA button ─────────────────────────────────────────────────────── */}
       {isTripStarted ? (
-        /* End Trip — placeholder, no functionality yet */
-        <Pressable style={styles.buttonWrapper} onPress={() => Alert.alert('End Trip', 'Coming soon')}>
-          <View style={styles.endTripButton}>
-            <Text style={styles.endTripButtonText}>End Trip</Text>
-          </View>
-        </Pressable>
+        /* Trip in Progress: End Trip (gold) + Wait/Resume (secondary) */
+        <>
+          {/* Wait timer display — only shown while waiting */}
+          {isWaiting && (
+            <WaitTimerDisplay
+              remainingSeconds={remainingWaitTime}
+              isFreeTimeExceeded={isFreeTimeExceeded}
+            />
+          )}
+
+          {/* End Trip */}
+          <Pressable style={styles.buttonWrapper} onPress={onEndTrip}>
+            <LinearGradient
+              colors={['#E5B566', '#B5783C']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.ctaButton}
+            >
+              <Ionicons name="flag-outline" size={18} color="#000" style={styles.ctaIcon} />
+              <Text style={styles.ctaButtonText}>End Trip</Text>
+            </LinearGradient>
+          </Pressable>
+
+          {/* Wait / Resume */}
+          <Pressable
+            style={[styles.buttonWrapper, styles.waitButtonWrapper]}
+            onPress={isWaiting ? onResumeTrip : onWait}
+          >
+            <View style={[styles.waitButton, isWaiting && styles.waitButtonActive]}>
+              <Ionicons
+                name={isWaiting ? 'play-outline' : 'pause-outline'}
+                size={16}
+                color={isWaiting ? '#FF9F0A' : '#8E8E93'}
+                style={styles.ctaIcon}
+              />
+              <Text style={[styles.waitButtonText, isWaiting && styles.waitButtonTextActive]}>
+                {isWaiting ? 'Resume Trip' : 'Wait'}
+              </Text>
+            </View>
+          </Pressable>
+        </>
       ) : rideStatus === 'GOING_TO_PICKUP' ? (
         <Pressable onPress={onArrivedAtPickup} style={styles.buttonWrapper}>
           <LinearGradient
@@ -393,19 +450,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-  endTripButton: {
-    paddingVertical: 16,
+  waitButtonWrapper: {
+    marginTop: -8,
+  },
+  waitButton: {
+    paddingVertical: 13,
     borderRadius: 16,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
     backgroundColor: '#2C2C2E',
     borderWidth: 1,
     borderColor: '#3A3A3C',
   },
-  endTripButtonText: {
+  waitButtonActive: {
+    backgroundColor: 'rgba(255, 159, 10, 0.10)',
+    borderColor: 'rgba(255, 159, 10, 0.35)',
+  },
+  waitButtonText: {
     color: '#8E8E93',
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '600',
     letterSpacing: 0.2,
+  },
+  waitButtonTextActive: {
+    color: '#FF9F0A',
   },
 
   // Divider

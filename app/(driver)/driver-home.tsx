@@ -19,6 +19,7 @@ import { useDriverLocation } from '../../src/hooks/useDriverLocation';
 import { RouteInfo } from '../../src/components/DrivingRoute';
 import { formatEta, formatDistance } from '../../src/utils/routeUtils';
 import { useRideStore } from '../../src/state/useRideStore';
+import { useWaitTimer } from '../../src/hooks/useWaitTimer';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ const STATUS_HEADER: Record<string, string> = {
   ARRIVED_AT_PICKUP: 'Arrived at Pickup',
   OTP_PENDING: 'Arrived at Pickup',
   TRIP_STARTED: 'Trip in Progress',
+  TRIP_COMPLETED: 'Trip Completed',
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -56,6 +58,16 @@ export default function DriverHomeScreen() {
 
   // ── Ride state machine ────────────────────────────────────────────────────
   const { ride, initRide, updateStatus, clearRide } = useRideStore();
+
+  // ── Wait timer (cumulative per trip) ──────────────────────────────────────
+  const {
+    isWaiting,
+    remainingFreeWaitTime,
+    isFreeTimeExceeded,
+    startWaiting,
+    stopWaiting,
+    reset: resetWaitTimer,
+  } = useWaitTimer();
 
   // Initialise ride when entering pickup mode (once per mount)
   useEffect(() => {
@@ -115,6 +127,31 @@ export default function DriverHomeScreen() {
     // Revert to ARRIVED_AT_PICKUP so driver can retry
     updateStatus('ARRIVED_AT_PICKUP');
   }, [updateStatus]);
+
+  const handleEndTrip = useCallback(() => {
+    if (!ride) return;
+    stopWaiting();
+    resetWaitTimer();
+    updateStatus('TRIP_COMPLETED');
+    router.push({
+      pathname: '/(driver)/feedback',
+      params: {
+        rideId: ride.id,
+        riderName: ride.riderName,
+        pickupText: ride.pickupText,
+        destinationText: ride.destinationText,
+        fare: ride.fare,
+      },
+    });
+  }, [ride, stopWaiting, resetWaitTimer, updateStatus, router]);
+
+  const handleWait = useCallback(() => {
+    startWaiting();
+  }, [startWaiting]);
+
+  const handleResumeTrip = useCallback(() => {
+    stopWaiting();
+  }, [stopWaiting]);
 
   // ── Permission denied fallback ─────────────────────────────────────────────
   if (hasPermission === false) {
@@ -221,6 +258,12 @@ export default function DriverHomeScreen() {
           stoppages={ride.stoppages}
           onArrivedAtPickup={handleArrivedAtPickup}
           onEnterOTP={handleEnterOTP}
+          onEndTrip={handleEndTrip}
+          onWait={handleWait}
+          onResumeTrip={handleResumeTrip}
+          isWaiting={isWaiting}
+          remainingWaitTime={remainingFreeWaitTime}
+          isFreeTimeExceeded={isFreeTimeExceeded}
         />
       ) : (
         <RideInfoPanel />

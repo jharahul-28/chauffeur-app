@@ -6,16 +6,14 @@ import { Coordinate } from '../components/MapViewContainer';
  * Linear state machine for a single ride lifecycle.
  *
  * Transitions:
- *   GOING_TO_PICKUP → ARRIVED_AT_PICKUP → OTP_PENDING → TRIP_STARTED
- *
- * Future states to add here:
- *   TRIP_STARTED → TRIP_COMPLETED | TRIP_CANCELLED
+ *   GOING_TO_PICKUP → ARRIVED_AT_PICKUP → OTP_PENDING → TRIP_STARTED → TRIP_COMPLETED
  */
 export type RideStatus =
   | 'GOING_TO_PICKUP'
   | 'ARRIVED_AT_PICKUP'
   | 'OTP_PENDING'
-  | 'TRIP_STARTED';
+  | 'TRIP_STARTED'
+  | 'TRIP_COMPLETED';
 
 // ─── Stoppage ─────────────────────────────────────────────────────────────────
 
