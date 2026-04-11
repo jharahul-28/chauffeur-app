@@ -1,29 +1,27 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-
-type ProfileMenuItem = {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  label: string;
-};
-
-const MENU_ITEMS: ProfileMenuItem[] = [
-  { icon: 'person-outline', label: 'Personal Details' },
-  { icon: 'car-outline', label: 'Vehicle Information' },
-  { icon: 'document-text-outline', label: 'Documents' },
-  { icon: 'star-outline', label: 'Ratings & Reviews' },
-  { icon: 'wallet-outline', label: 'Earnings' },
-  { icon: 'settings-outline', label: 'Settings' },
-  { icon: 'help-circle-outline', label: 'Help & Support' },
-];
+import { fetchChauffeurProfile, ChauffeurProfile } from '../../../src/services/profileService';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const [profile, setProfile] = useState<ChauffeurProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchChauffeurProfile()
+      .then(setProfile)
+      .catch((err) => console.warn('[ProfileScreen] Failed to load profile', err))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const initials = profile
+    ? `${profile.firstName[0]}${profile.lastName[0]}`.toUpperCase()
+    : '—';
+  const fullName = profile ? `${profile.firstName} ${profile.lastName}` : '—';
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.headerTitle}>Profile</Text>
       </View>
@@ -36,57 +34,61 @@ export default function ProfileScreen() {
         {/* Avatar + Name */}
         <View style={styles.profileSection}>
           <View style={styles.avatarLarge}>
-            <Text style={styles.avatarLargeText}>DR</Text>
+            {isLoading
+              ? <ActivityIndicator color="#EDB96D" />
+              : <Text style={styles.avatarLargeText}>{initials}</Text>
+            }
           </View>
-          <Text style={styles.driverName}>Driver</Text>
+          <Text style={styles.driverName}>{isLoading ? '—' : fullName}</Text>
           <Text style={styles.driverSubtext}>Chauffeur Partner</Text>
         </View>
 
         {/* Stats */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Text style={styles.statValue}>4.9</Text>
+            <Text style={styles.statValue}>
+              {isLoading ? '—' : (profile?.rating?.toFixed(1) ?? '—')}
+            </Text>
             <Text style={styles.statLabel}>Rating</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
-            <Text style={styles.statValue}>128</Text>
+            <Text style={styles.statValue}>
+              {isLoading ? '—' : (profile?.numberOfRides ?? 0)}
+            </Text>
             <Text style={styles.statLabel}>Rides</Text>
           </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>98%</Text>
-            <Text style={styles.statLabel}>Acceptance</Text>
+        </View>
+
+        {/* Details */}
+        {!isLoading && profile && (
+          <View style={styles.detailsCard}>
+            <DetailRow label="Phone" value={profile.phone} />
+            <DetailRow label="Email" value={profile.email} />
+            <DetailRow label="Gender" value={profile.gender} />
+            <DetailRow label="Date of Birth" value={profile.dateOfBirth} isLast />
           </View>
-        </View>
-
-        {/* Menu */}
-        <View style={styles.menuContainer}>
-          {MENU_ITEMS.map((item, index) => (
-            <Pressable
-              key={item.label}
-              style={[
-                styles.menuItem,
-                index < MENU_ITEMS.length - 1 && styles.menuItemBorder,
-              ]}
-            >
-              <View style={styles.menuIconContainer}>
-                <Ionicons name={item.icon} size={20} color="#EDB96D" />
-              </View>
-              <Text style={styles.menuLabel}>{item.label}</Text>
-              <Ionicons name="chevron-forward" size={16} color="#3A3A3C" />
-            </Pressable>
-          ))}
-        </View>
-
-        {/* Logout */}
-        <Pressable style={styles.logoutButton}>
-          <Ionicons name="log-out-outline" size={20} color="#FF453A" />
-          <Text style={styles.logoutText}>Log Out</Text>
-        </Pressable>
+        )}
 
         <View style={styles.bottomPadding} />
       </ScrollView>
+    </View>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+  isLast,
+}: {
+  label: string;
+  value: string;
+  isLast?: boolean;
+}) {
+  return (
+    <View style={[styles.detailRow, !isLast && styles.detailRowBorder]}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue}>{value}</Text>
     </View>
   );
 }
@@ -167,52 +169,33 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     fontSize: 12,
   },
-  menuContainer: {
+  detailsCard: {
     backgroundColor: '#1C1C1E',
     borderRadius: 16,
-    marginBottom: 20,
     overflow: 'hidden',
   },
-  menuItem: {
+  detailRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 14,
     paddingHorizontal: 16,
-    gap: 12,
   },
-  menuItemBorder: {
+  detailRowBorder: {
     borderBottomWidth: 1,
     borderBottomColor: '#2C2C2E',
   },
-  menuIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: 'rgba(237, 185, 109, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  detailLabel: {
+    color: '#8E8E93',
+    fontSize: 14,
   },
-  menuLabel: {
+  detailValue: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '500',
-    flex: 1,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#1C1C1E',
-    borderRadius: 12,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 69, 58, 0.2)',
-  },
-  logoutText: {
-    color: '#FF453A',
-    fontSize: 15,
-    fontWeight: '600',
+    flexShrink: 1,
+    textAlign: 'right',
+    marginLeft: 16,
   },
   bottomPadding: {
     height: 20,

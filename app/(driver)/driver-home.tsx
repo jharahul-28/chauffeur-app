@@ -6,6 +6,7 @@ import {
   Switch,
   ActivityIndicator,
   Pressable,
+  TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,21 +16,29 @@ import MapViewContainer, { Coordinate } from '../../src/components/MapViewContai
 import RideInfoPanel from '../../src/components/RideInfoPanel';
 import PickupDrawer from '../../src/components/PickupDrawer';
 import OTPModal from '../../src/components/OTPModal';
+import ChargeModal from '../../src/components/ChargeModal';
 import { useDriverLocation } from '../../src/hooks/useDriverLocation';
+import { useLocationSync } from '../../src/hooks/useLocationSync';
 import { RouteInfo } from '../../src/components/DrivingRoute';
 import { formatEta, formatDistance } from '../../src/utils/routeUtils';
 import { useRideStore } from '../../src/state/useRideStore';
 import { useWaitTimer } from '../../src/hooks/useWaitTimer';
+import { useBookingDetail, RideDetailData } from '../../src/hooks/useBookingDetail';
+import {
+  postDriverOnTheWay,
+  postArrived,
+  postVerifyOtp,
+  postWaiting,
+  postContinue,
+  postComplete,
+} from '../../src/services/rideService';
+import { ExtraCharge } from '../../src/types/charge';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/**
- * Search params passed from Bookings → "Go to Pickup".
- * When present the screen enters pickup mode.
- */
+/** Search params passed from Bookings → "Go to Pickup". */
 interface PickupParams {
-  riderName?: string;
-  pickupText?: string;
+  bookingId?: string;
 }
 
 // ─── Top-bar label per ride status ────────────────────────────────────────────
@@ -49,15 +58,27 @@ export default function DriverHomeScreen() {
   const insets = useSafeAreaInsets();
   const [isOnline, setIsOnline] = useState(false);
   const [otpModalVisible, setOtpModalVisible] = useState(false);
+  const [chargeModalVisible, setChargeModalVisible] = useState(false);
 
   const { location, hasPermission, isLoading, error } = useDriverLocation();
 
+  // Background location sync — active whenever the driver is on this screen
+  // (treated as "logged in" state). Stops on unmount automatically.
+  useLocationSync(true);
+
   // ── Navigation params ──────────────────────────────────────────────────────
-  const { riderName, pickupText } = useLocalSearchParams<PickupParams>();
-  const isPickupMode = Boolean(riderName);
+  const { bookingId } = useLocalSearchParams<PickupParams>();
+  const isPickupMode = Boolean(bookingId);
+
+  // ── Booking detail fetch ──────────────────────────────────────────────────
+  const {
+    ride: bookingDetailRide,
+    isLoading: isDetailLoading,
+    error: detailError,
+  } = useBookingDetail(bookingId);
 
   // ── Ride state machine ────────────────────────────────────────────────────
-  const { ride, initRide, updateStatus, clearRide } = useRideStore();
+  const { ride, extraCharges, initRide, updateStatus, addExtraCharge, clearRide } = useRideStore();
 
   // ── Wait timer (cumulative per trip) ──────────────────────────────────────
   const {
@@ -69,15 +90,20 @@ export default function DriverHomeScreen() {
     reset: resetWaitTimer,
   } = useWaitTimer();
 
-  // Initialise ride when entering pickup mode (once per mount)
+  // Initialise ride once booking detail loads, then notify backend
   useEffect(() => {
-    if (isPickupMode && !ride) {
-      initRide({
-        riderName: riderName ?? 'Rider',
-        pickupText: pickupText ?? 'Pickup Location',
-      });
+    if (isPickupMode && bookingDetailRide && !ride) {
+      // Merge bookingVehicleId (route param = bookings list id) into ride data
+      const rideData: Omit<RideDetailData & { bookingVehicleId: string }, never> = {
+        ...bookingDetailRide,
+        bookingVehicleId: bookingId!,
+      };
+      initRide(rideData);
+      postDriverOnTheWay(bookingId!).catch((err) =>
+        console.error('[driver-home] postDriverOnTheWay failed:', err)
+      );
     }
-  }, [isPickupMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bookingDetailRide]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear ride on unmount / navigating back to avoid stale state
   useEffect(() => {
@@ -108,7 +134,12 @@ export default function DriverHomeScreen() {
 
   const handleArrivedAtPickup = useCallback(() => {
     updateStatus('ARRIVED_AT_PICKUP');
-  }, [updateStatus]);
+    if (ride?.bookingVehicleId) {
+      postArrived(ride.bookingVehicleId).catch((err) =>
+        console.error('[driver-home] postArrived failed:', err)
+      );
+    }
+  }, [updateStatus, ride]);
 
   const handleEnterOTP = useCallback(() => {
     updateStatus('OTP_PENDING');
@@ -118,13 +149,17 @@ export default function DriverHomeScreen() {
   const handleOTPSuccess = useCallback(() => {
     setOtpModalVisible(false);
     updateStatus('TRIP_STARTED');
-    // Route info resets — the new DrivingRoute will call onRouteUpdate for the new route
     setRouteInfo(null);
   }, [updateStatus]);
 
+  // Async OTP verifier passed to OTPModal — throws on wrong OTP so modal shows error
+  const handleVerifyOtp = useCallback(async (otp: string) => {
+    if (!ride?.bookingVehicleId) throw new Error('No active ride');
+    await postVerifyOtp(ride.bookingVehicleId, otp);
+  }, [ride]);
+
   const handleOTPDismiss = useCallback(() => {
     setOtpModalVisible(false);
-    // Revert to ARRIVED_AT_PICKUP so driver can retry
     updateStatus('ARRIVED_AT_PICKUP');
   }, [updateStatus]);
 
@@ -133,6 +168,10 @@ export default function DriverHomeScreen() {
     stopWaiting();
     resetWaitTimer();
     updateStatus('TRIP_COMPLETED');
+    // Fire-and-forget: don't block navigation on API call
+    postComplete(ride.bookingVehicleId).catch((err) =>
+      console.error('[driver-home] postComplete failed:', err)
+    );
     router.push({
       pathname: '/(driver)/feedback',
       params: {
@@ -147,13 +186,32 @@ export default function DriverHomeScreen() {
 
   const handleWait = useCallback(() => {
     startWaiting();
-  }, [startWaiting]);
+    if (ride?.bookingVehicleId) {
+      postWaiting(ride.bookingVehicleId).catch((err) =>
+        console.error('[driver-home] postWaiting failed:', err)
+      );
+    }
+  }, [startWaiting, ride]);
 
   const handleResumeTrip = useCallback(() => {
     stopWaiting();
-  }, [stopWaiting]);
+    if (ride?.bookingVehicleId) {
+      postContinue(ride.bookingVehicleId).catch((err) =>
+        console.error('[driver-home] postContinue failed:', err)
+      );
+    }
+  }, [stopWaiting, ride]);
+
+  // ── Extra charge handlers ─────────────────────────────────────────────────
+
+  const handleChargeSubmit = useCallback((charge: ExtraCharge) => {
+    addExtraCharge(charge);
+    setChargeModalVisible(false);
+  }, [addExtraCharge]);
 
   // ── Permission denied fallback ─────────────────────────────────────────────
+  // Note: PermissionGate in the driver layout already blocks before this screen
+  // mounts. This is a secondary in-screen fallback for edge cases.
   if (hasPermission === false) {
     return (
       <View style={styles.centeredContainer}>
@@ -168,6 +226,31 @@ export default function DriverHomeScreen() {
   }
 
   const headerTitle = ride ? (STATUS_HEADER[ride.status] ?? 'En Route to Pickup') : 'En Route to Pickup';
+  const headerSubtitle = ride?.riderName ?? (isDetailLoading ? 'Loading…' : '');
+
+  // Show full-screen loading while booking detail is being fetched
+  if (isPickupMode && isDetailLoading) {
+    return (
+      <View style={styles.centeredContainer}>
+        <ActivityIndicator size="large" color="#EDB96D" />
+        <Text style={styles.loadingLabel}>Loading booking…</Text>
+      </View>
+    );
+  }
+
+  // Show full-screen error if detail fetch failed
+  if (isPickupMode && detailError) {
+    return (
+      <View style={styles.centeredContainer}>
+        <Text style={styles.permissionIcon}>⚠️</Text>
+        <Text style={styles.permissionTitle}>Failed to load booking</Text>
+        <Text style={styles.permissionBody}>{detailError}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={() => router.back()}>
+          <Text style={styles.retryText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
@@ -194,10 +277,17 @@ export default function DriverHomeScreen() {
             </Pressable>
             <View style={styles.pickupHeaderLabel}>
               <Text style={styles.pickupHeaderTitle}>{headerTitle}</Text>
-              {riderName && (
-                <Text style={styles.pickupHeaderSub}>{riderName}</Text>
-              )}
+              {headerSubtitle ? (
+                <Text style={styles.pickupHeaderSub}>{headerSubtitle}</Text>
+              ) : null}
             </View>
+            {/* Extra charge badge — shown when charges exist */}
+            {extraCharges.length > 0 && (
+              <View style={styles.chargeBadge}>
+                <Ionicons name="receipt-outline" size={12} color="#EDB96D" />
+                <Text style={styles.chargeBadgeText}>{extraCharges.length}</Text>
+              </View>
+            )}
           </View>
         ) : (
           /* ── Normal mode: online/offline toggle ── */
@@ -250,6 +340,9 @@ export default function DriverHomeScreen() {
       {isPickupMode && ride ? (
         <PickupDrawer
           riderName={ride.riderName}
+          bookingReference={ride.bookingReference}
+          customerContact={ride.customerContact}
+          fare={ride.fare}
           pickupLocationText={ride.pickupText}
           estimatedTime={routeInfo ? formatEta(routeInfo.durationSeconds) : '—'}
           distance={routeInfo ? formatDistance(routeInfo.distanceMeters) : undefined}
@@ -261,6 +354,7 @@ export default function DriverHomeScreen() {
           onEndTrip={handleEndTrip}
           onWait={handleWait}
           onResumeTrip={handleResumeTrip}
+          onCharge={() => setChargeModalVisible(true)}
           isWaiting={isWaiting}
           remainingWaitTime={remainingFreeWaitTime}
           isFreeTimeExceeded={isFreeTimeExceeded}
@@ -274,10 +368,18 @@ export default function DriverHomeScreen() {
         <OTPModal
           visible={otpModalVisible}
           riderName={ride.riderName}
+          onVerify={handleVerifyOtp}
           onSuccess={handleOTPSuccess}
           onDismiss={handleOTPDismiss}
         />
       )}
+
+      {/* ── Charge Modal ─────────────────────────────────────────────────────── */}
+      <ChargeModal
+        visible={chargeModalVisible}
+        onSubmit={handleChargeSubmit}
+        onDismiss={() => setChargeModalVisible(false)}
+      />
     </View>
   );
 }
@@ -378,6 +480,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 1,
   },
+  chargeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(237, 185, 109, 0.15)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(237, 185, 109, 0.3)',
+  },
+  chargeBadgeText: {
+    color: '#EDB96D',
+    fontSize: 12,
+    fontWeight: '700',
+  },
 
   // Badges
   loadingBadge: {
@@ -404,28 +522,46 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Permission denied
+  // Permission denied / loading / error full-screen states
   centeredContainer: {
     flex: 1,
     backgroundColor: '#111111',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,
+    gap: 12,
   },
   permissionIcon: {
     fontSize: 48,
-    marginBottom: 16,
+    marginBottom: 4,
   },
   permissionTitle: {
     color: '#FFFFFF',
     fontSize: 22,
     fontWeight: '700',
-    marginBottom: 10,
   },
   permissionBody: {
     color: '#8E8E93',
     fontSize: 15,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  loadingLabel: {
+    color: '#8E8E93',
+    fontSize: 15,
+    marginTop: 4,
+  },
+  retryButton: {
+    marginTop: 8,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#EDB96D',
+  },
+  retryText: {
+    color: '#EDB96D',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

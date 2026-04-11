@@ -8,12 +8,12 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import OtpInput from './OtpInput';
-import { MOCK_OTP } from '../data/mockTripData';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,11 +21,12 @@ export interface OTPModalProps {
   visible: boolean;
   riderName: string;
   /**
-   * Called when the correct OTP is entered.
-   * Swap the body of this callback to hit a real API endpoint:
-   *   const res = await verifyOtp(enteredOtp);
-   *   if (res.ok) onSuccess();
+   * Called with the entered OTP string. Should throw on verification failure
+   * (e.g. wrong OTP → API returns 4xx). The modal shows an error and lets
+   * the driver retry. Resolves on success.
    */
+  onVerify: (otp: string) => Promise<void>;
+  /** Called after onVerify resolves successfully. */
   onSuccess: () => void;
   /** Called when the driver dismisses the modal without verifying. */
   onDismiss: () => void;
@@ -39,11 +40,13 @@ const EMPTY_OTP = () => Array<string>(OTP_LENGTH).fill('');
 export default function OTPModal({
   visible,
   riderName,
+  onVerify,
   onSuccess,
   onDismiss,
 }: OTPModalProps) {
   const [otp, setOtp] = useState<string[]>(EMPTY_OTP());
   const [hasError, setHasError] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const firstInputRef = useRef<TextInput | null>(null);
 
   const isComplete = otp.every((d) => d !== '');
@@ -51,27 +54,29 @@ export default function OTPModal({
   const reset = useCallback(() => {
     setOtp(EMPTY_OTP());
     setHasError(false);
+    setIsVerifying(false);
   }, []);
 
   const handleOtpChange = useCallback((newOtp: string[]) => {
     setOtp(newOtp);
-    // Clear error as soon as the driver starts correcting
     if (hasError) setHasError(false);
   }, [hasError]);
 
-  const handleVerify = useCallback(() => {
+  const handleVerify = useCallback(async () => {
     const entered = otp.join('');
-    if (entered === MOCK_OTP) {
+    setIsVerifying(true);
+    setHasError(false);
+    try {
+      await onVerify(entered);
       reset();
       onSuccess();
-    } else {
+    } catch {
       setHasError(true);
-      // Clear the entered digits so the driver can retry immediately
+      setIsVerifying(false);
       setOtp(EMPTY_OTP());
-      // Re-focus the first box after a tick (so the clear has applied)
       setTimeout(() => firstInputRef.current?.focus(), 50);
     }
-  }, [otp, onSuccess, reset]);
+  }, [otp, onVerify, onSuccess, reset]);
 
   const handleDismiss = useCallback(() => {
     reset();
@@ -133,23 +138,27 @@ export default function OTPModal({
             {/* ── Continue button ───────────────────────────────────────── */}
             <Pressable
               onPress={handleVerify}
-              disabled={!isComplete}
+              disabled={!isComplete || isVerifying}
               style={styles.buttonWrapper}
             >
               <LinearGradient
-                colors={isComplete ? ['#E5B566', '#B5783C'] : ['#3A3A3C', '#2C2C2E']}
+                colors={isComplete && !isVerifying ? ['#E5B566', '#B5783C'] : ['#3A3A3C', '#2C2C2E']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.button}
               >
-                <Text
-                  style={[
-                    styles.buttonText,
-                    !isComplete && styles.buttonTextDisabled,
-                  ]}
-                >
-                  Continue
-                </Text>
+                {isVerifying ? (
+                  <ActivityIndicator size="small" color="#8E8E93" />
+                ) : (
+                  <Text
+                    style={[
+                      styles.buttonText,
+                      !isComplete && styles.buttonTextDisabled,
+                    ]}
+                  >
+                    Continue
+                  </Text>
+                )}
               </LinearGradient>
             </Pressable>
           </View>

@@ -1,5 +1,14 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, StatusBar } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  StatusBar,
+  ActivityIndicator,
+  TouchableOpacity,
+  RefreshControl,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, {
@@ -8,29 +17,27 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
-import HighlightedBookingCard from '@/src/components/HighlightedBookingCard';
-import BookingCard from '@/src/components/BookingCard';
-import { mockBookings } from '@/src/data/mockBookings';
+
+import BookingTabs from '@/src/components/BookingTabs';
+import BookingList from '@/src/components/BookingList';
 import { Booking } from '@/src/types/booking';
+import { BookingTab } from '@/src/utils/bookingFilter';
+import { useBookings } from '@/src/hooks/useBookings';
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function BookingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const upcomingRides: Booking[] = mockBookings.filter((b) => b.status === 'UPCOMING');
-  const completedRides: Booking[] = mockBookings.filter((b) => b.status === 'COMPLETED');
+  const [activeTab, setActiveTab] = useState<BookingTab>('current');
 
-  const featuredRide: Booking | undefined = upcomingRides[0];
-  const remainingUpcoming: Booking[] = upcomingRides.slice(1);
+  const { bookings, isLoading, error, refetch } = useBookings(activeTab);
 
-  const handleGoToPickup = () => {
-    if (!featuredRide) return;
+  const handleGoToPickup = (booking: Booking) => {
     router.push({
       pathname: '/(driver)/driver-home',
-      params: {
-        riderName: featuredRide.customerName,
-        pickupText: featuredRide.pickupLocation,
-      },
+      params: { bookingId: booking.id },
     });
   };
 
@@ -61,52 +68,54 @@ export default function BookingsScreen() {
         <Text style={styles.headerTitle}>Bookings</Text>
       </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Featured: Most Recent Upcoming Ride */}
-        {featuredRide !== undefined && (
-          <HighlightedBookingCard
-            booking={featuredRide}
-            onGoToPickup={handleGoToPickup}
+      {/* Tab control */}
+      <BookingTabs activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {/* Loading state */}
+      {isLoading && (
+        <View style={styles.centeredState}>
+          <ActivityIndicator size="large" color="#EDB96D" />
+        </View>
+      )}
+
+      {/* Error state */}
+      {!isLoading && error && (
+        <View style={styles.centeredState}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={refetch}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Booking list — pull-to-refresh triggers a cache-busting refetch */}
+      {!isLoading && !error && (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={false}
+              onRefresh={refetch}
+              tintColor="#EDB96D"
+            />
+          }
+        >
+          <BookingList
+            bookings={bookings}
+            tab={activeTab}
+            onGoToPickup={activeTab === 'current' ? handleGoToPickup : undefined}
           />
-        )}
-
-        {/* Remaining Upcoming Rides */}
-        {remainingUpcoming.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <View style={[styles.sectionDot, styles.upcomingDot]} />
-              <Text style={styles.sectionTitle}>Upcoming Rides</Text>
-              <View style={styles.sectionLine} />
-            </View>
-            {remainingUpcoming.map((booking) => (
-              <BookingCard key={booking.id} booking={booking} />
-            ))}
-          </>
-        )}
-
-        {/* Completed Rides */}
-        {completedRides.length > 0 && (
-          <>
-            <View style={[styles.sectionHeader, styles.sectionHeaderTop]}>
-              <View style={[styles.sectionDot, styles.completedDot]} />
-              <Text style={styles.sectionTitle}>Completed Rides</Text>
-              <View style={styles.sectionLine} />
-            </View>
-            {completedRides.map((booking) => (
-              <BookingCard key={booking.id} booking={booking} />
-            ))}
-          </>
-        )}
-
-        <View style={styles.bottomPadding} />
-      </ScrollView>
+          <View style={styles.bottomPadding} />
+        </ScrollView>
+      )}
     </View>
   );
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {
@@ -115,7 +124,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 24,
-    paddingBottom: 16,
+    paddingBottom: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -130,41 +139,34 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
-  },
-  sectionHeaderTop: {
-    marginTop: 8,
-  },
-  sectionDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  upcomingDot: {
-    backgroundColor: '#EDB96D',
-  },
-  completedDot: {
-    backgroundColor: '#30D158',
-  },
-  sectionTitle: {
-    color: '#8E8E93',
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  sectionLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#2C2C2E',
+    paddingTop: 4,
   },
   bottomPadding: {
     height: 20,
+  },
+  centeredState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  errorText: {
+    color: '#FF453A',
+    fontSize: 14,
+    textAlign: 'center',
+    paddingHorizontal: 32,
+    lineHeight: 20,
+  },
+  retryButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#EDB96D',
+  },
+  retryText: {
+    color: '#EDB96D',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

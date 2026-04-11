@@ -30,12 +30,21 @@ export interface Stoppage {
 /**
  * Full representation of the ride the driver is currently executing.
  *
- * Populated from the booking API (currently mocked).
+ * Populated from the booking detail API.
  * The `status` field is managed locally by `useRideStore`.
  */
 export interface ActiveRide {
   id: string;
+  /**
+   * The `id` from the bookings list API — used as the path param for all
+   * ride action endpoints (/chauffeur/{bookingVehicleId}/driver-on-the-way, etc.)
+   */
+  bookingVehicleId: string;
+  /** e.g. "VLV-20260411-6D9B4" */
+  bookingReference: string;
   riderName: string;
+  /** Raw contact string from API, e.g. "98765 43210" */
+  customerContact: string;
   pickupText: string;
   destinationText: string;
   pickup: Coordinate;
@@ -43,6 +52,8 @@ export interface ActiveRide {
   /** Ordered list of intermediate stops between pickup and destination. */
   stoppages: Stoppage[];
   status: RideStatus;
-  /** Formatted fare string, e.g. "₹480". */
+  /** Formatted fare string, e.g. "₹2,630". */
   fare: string;
+  /** Raw fare number for calculations. */
+  totalFare: number;
 }

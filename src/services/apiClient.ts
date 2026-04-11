@@ -1,5 +1,10 @@
 import axios from "axios";
-import { getAccessToken, setAccessToken, removeAccessToken } from "../storage/tokenStorage";
+import {
+    getAccessToken,
+    setAccessToken,
+    removeAccessToken,
+    removeChauffeurId,
+} from "../storage/tokenStorage";
 
 export { setAccessToken, removeAccessToken };
 
@@ -15,8 +20,19 @@ apiClient.interceptors.request.use(
         const token = await getAccessToken();
 
         if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
+            config.headers["auth-key"] = token;
         }
+
+        // ── Request log ──────────────────────────────────────────────────────
+        console.log('[API] ➡️  Request', {
+            method: config.method?.toUpperCase(),
+            url: `${config.baseURL}${config.url}`,
+            params: config.params,
+            headers: {
+                'auth-key': token ? `${token.slice(0, 12)}...` : 'MISSING',
+                'Content-Type': config.headers['Content-Type'],
+            },
+        });
 
         return config;
     },
@@ -24,10 +40,32 @@ apiClient.interceptors.request.use(
 );
 
 apiClient.interceptors.response.use(
-    (response) => response,
+    (response) => {
+        // ── Response log ─────────────────────────────────────────────────────
+        console.log('[API] ✅ Response', {
+            status: response.status,
+            url: response.config.url,
+            dataType: Array.isArray(response.data) ? 'array' : typeof response.data,
+            dataKeys: response.data && typeof response.data === 'object'
+                ? Object.keys(response.data)
+                : 'N/A',
+            // Log full raw data so we can see the exact field names from API
+            rawData: response.data,
+        });
+        return response;
+    },
     async (error) => {
+        // ── Error log ────────────────────────────────────────────────────────
+        console.error('[API] ❌ Error', {
+            url: error.config?.url,
+            status: error.response?.status,
+            message: error.message,
+            responseData: error.response?.data,
+        });
+
         if (error.response?.status === 401) {
             await removeAccessToken();
+            await removeChauffeurId();
         }
 
         return Promise.reject(error);

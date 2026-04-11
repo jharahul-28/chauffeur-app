@@ -8,23 +8,48 @@ export const getAccessToken = async (): Promise<string | null> => {
         console.log("Unable to fetch access token");
         return null;
     }
-}
+};
 
 export const setAccessToken = async (token: string) => {
     try {
         await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, token);
-        console.log("Access token stored");
         return;
     } catch (err) {
         console.log("Unable to store access token");
         return;
     }
-}
+};
 
 export const removeAccessToken = async () => {
     try {
         await AsyncStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
     } catch (error) {
-        console.error("Unable to store access token", error);
+        console.error("Unable to remove access token", error);
+    }
+};
+
+export const getChauffeurId = async (): Promise<number | null> => {
+    try {
+        const value = await AsyncStorage.getItem(STORAGE_KEYS.CHAUFFEUR_ID);
+        return value ? parseInt(value, 10) : null;
+    } catch (error) {
+        console.log("Unable to fetch chauffeur id");
+        return null;
+    }
+};
+
+export const setChauffeurId = async (id: number) => {
+    try {
+        await AsyncStorage.setItem(STORAGE_KEYS.CHAUFFEUR_ID, String(id));
+    } catch (error) {
+        console.log("Unable to store chauffeur id");
+    }
+};
+
+export const removeChauffeurId = async () => {
+    try {
+        await AsyncStorage.removeItem(STORAGE_KEYS.CHAUFFEUR_ID);
+    } catch (error) {
+        console.error("Unable to remove chauffeur id", error);
     }
 };

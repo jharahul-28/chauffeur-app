@@ -1,28 +1,18 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { Booking } from '@/src/types/booking';
 
 interface HighlightedBookingCardProps {
   booking: Booking;
-  onGoToPickup: () => void;
-}
-
-function getInitials(name: string): string {
-  return name
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
+  onGoToPickup?: () => void;
 }
 
 export default function HighlightedBookingCard({
   booking,
   onGoToPickup,
 }: HighlightedBookingCardProps) {
-  const initials = getInitials(booking.customerName);
-
   return (
     <LinearGradient
       colors={['rgba(229, 181, 102, 0.35)', 'rgba(181, 120, 60, 0.15)']}
@@ -37,57 +27,29 @@ export default function HighlightedBookingCard({
             <View style={styles.pulseDot} />
             <Text style={styles.nextRideText}>NEXT RIDE</Text>
           </View>
-          <Text style={styles.dateTime}>{booking.dateTime}</Text>
+          <View style={styles.dateRow}>
+            <Ionicons name="time-outline" size={13} color="#AAAAAA" />
+            <Text style={styles.dateTime}>{booking.dateTime}</Text>
+          </View>
         </View>
 
         <View style={styles.divider} />
 
-        {/* Customer Row */}
-        <View style={styles.customerRow}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials}</Text>
-          </View>
-          <Text style={styles.customerName}>{booking.customerName}</Text>
-        </View>
+        {/* Category Name */}
+        <Text style={styles.categoryName}>{booking.categoryName}</Text>
 
-        {/* Locations */}
-        <View style={styles.locationsContainer}>
-          <View style={styles.locationRow}>
-            <View style={[styles.locationDot, styles.pickupDot]} />
-            <View style={styles.locationTextContainer}>
-              <Text style={styles.locationLabel}>PICKUP</Text>
-              <Text style={styles.locationText} numberOfLines={1}>
-                {booking.pickupLocation}
-              </Text>
-            </View>
+        {/* Vehicle Info Row */}
+        <View style={styles.vehicleRow}>
+          <View style={styles.vehicleIconWrap}>
+            <Ionicons name="car-sport-outline" size={16} color="#EDB96D" />
           </View>
-          <View style={styles.locationConnectorLine} />
-          <View style={styles.locationRow}>
-            <View style={[styles.locationDot, styles.dropDot]} />
-            <View style={styles.locationTextContainer}>
-              <Text style={styles.locationLabel}>DROP</Text>
-              <Text style={styles.locationText} numberOfLines={1}>
-                {booking.dropLocation}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Stats Row */}
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>₹{booking.cost.toLocaleString()}</Text>
-            <Text style={styles.statLabel}>Fare</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{booking.expectedTime}</Text>
-            <Text style={styles.statLabel}>Est. Time</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{booking.expectedDistance} km</Text>
-            <Text style={styles.statLabel}>Distance</Text>
+          <View style={styles.vehicleDetails}>
+            <Text style={styles.vehicleInfo}>{booking.vehicleInfo}</Text>
+            {booking.vehicleNumber ? (
+              <View style={styles.vehicleNumberBadge}>
+                <Text style={styles.vehicleNumberText}>{booking.vehicleNumber}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -147,6 +109,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
   dateTime: {
     color: '#AAAAAA',
     fontSize: 13,
@@ -155,104 +122,59 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: 'rgba(237, 185, 109, 0.12)',
+    marginBottom: 16,
+  },
+  categoryName: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
     marginBottom: 14,
   },
-  customerRow: {
+  vehicleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 16,
+    marginBottom: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    padding: 12,
   },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(237, 185, 109, 0.15)',
+  vehicleIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(237, 185, 109, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(237, 185, 109, 0.4)',
+    borderWidth: 1,
+    borderColor: 'rgba(237, 185, 109, 0.2)',
   },
-  avatarText: {
-    color: '#EDB96D',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  customerName: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  locationsContainer: {
-    marginBottom: 16,
-    paddingLeft: 2,
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  locationConnectorLine: {
-    width: 1.5,
-    height: 14,
-    backgroundColor: '#3A3A3C',
-    marginLeft: 5.5,
-    marginVertical: 3,
-  },
-  locationDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginTop: 4,
-    flexShrink: 0,
-  },
-  pickupDot: {
-    backgroundColor: '#30D158',
-  },
-  dropDot: {
-    backgroundColor: '#EDB96D',
-  },
-  locationTextContainer: {
+  vehicleDetails: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
-  locationLabel: {
-    color: '#8E8E93',
-    fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-    marginBottom: 1,
-  },
-  locationText: {
+  vehicleInfo: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '500',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 12,
-    paddingVertical: 14,
-    marginBottom: 16,
-  },
-  statBox: {
     flex: 1,
-    alignItems: 'center',
   },
-  statDivider: {
-    width: 1,
-    backgroundColor: '#2C2C2E',
-    alignSelf: 'stretch',
+  vehicleNumberBadge: {
+    backgroundColor: 'rgba(237, 185, 109, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(237, 185, 109, 0.2)',
   },
-  statValue: {
-    color: '#FFFFFF',
-    fontSize: 15,
+  vehicleNumberText: {
+    color: '#EDB96D',
+    fontSize: 12,
     fontWeight: '700',
-    marginBottom: 3,
-  },
-  statLabel: {
-    color: '#8E8E93',
-    fontSize: 11,
-    fontWeight: '500',
+    letterSpacing: 0.5,
   },
   buttonWrapper: {
     width: '100%',

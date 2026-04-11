@@ -1,4 +1,6 @@
 import apiClient from './apiClient';
+import { setAccessToken } from '../storage/tokenStorage';
+import { setChauffeurId } from '../storage/tokenStorage';
 
 export interface VerifyOtpResponse {
     authToken: string;
@@ -31,5 +33,12 @@ export const verifyOtp = async (
         phone,
         otp,
     });
+
+    const { authToken, user } = response.data;
+
+    // Persist credentials so all subsequent requests can use them
+    await setAccessToken(authToken);
+    await setChauffeurId(user.id);
+
     return response.data;
 };

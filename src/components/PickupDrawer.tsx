@@ -1,5 +1,5 @@
 import React, { memo, useMemo } from 'react';
-import { View, Text, StyleSheet, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, Linking } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -27,9 +27,15 @@ const SPRING_CONFIG = {
 
 export interface PickupDrawerProps {
   riderName: string;
+  /** e.g. "VLV-20260411-6D9B4" */
+  bookingReference?: string;
+  /** Raw contact from API, e.g. "98765 43210" or "919876543210" */
+  customerContact?: string;
   pickupLocationText: string;
   estimatedTime?: string;
   distance?: string;
+  /** Formatted fare string, e.g. "₹2,630" */
+  fare?: string;
   rideStatus: RideStatus;
   /** Required when rideStatus === 'TRIP_STARTED'. */
   destinationText?: string;
@@ -45,6 +51,8 @@ export interface PickupDrawerProps {
   onWait?: () => void;
   /** Called when driver taps "Resume". */
   onResumeTrip?: () => void;
+  /** Called when driver taps "Charge" — opens ChargeModal in parent. */
+  onCharge?: () => void;
   /** Whether the driver is currently in a wait state. */
   isWaiting?: boolean;
   /** Remaining free wait seconds (used for timer display). */
@@ -81,9 +89,12 @@ function getInitials(name: string): string {
  */
 const PickupDrawer = memo(function PickupDrawer({
   riderName,
+  bookingReference,
+  customerContact,
   pickupLocationText,
   estimatedTime = '—',
   distance,
+  fare,
   rideStatus,
   destinationText,
   stoppages = [],
@@ -92,6 +103,7 @@ const PickupDrawer = memo(function PickupDrawer({
   onEndTrip,
   onWait,
   onResumeTrip,
+  onCharge,
   isWaiting = false,
   remainingWaitTime = 180,
   isFreeTimeExceeded = false,
@@ -101,6 +113,19 @@ const PickupDrawer = memo(function PickupDrawer({
   const initials = getInitials(riderName);
 
   const isTripStarted = rideStatus === 'TRIP_STARTED';
+
+  const handleCall = () => {
+    if (!customerContact) {
+      Alert.alert('No contact', 'Customer contact is not available.');
+      return;
+    }
+    // Normalise: strip spaces/dashes, ensure leading +
+    const digits = customerContact.replace(/[\s\-()]/g, '');
+    const tel = digits.startsWith('+') ? digits : `+${digits}`;
+    Linking.openURL(`tel:${tel}`).catch(() =>
+      Alert.alert('Error', 'Unable to open dialler.')
+    );
+  };
 
   // Dynamic expanded height: larger for trip-started to fit stoppages + wait button + timer
   const expandedHeight = useMemo(() => {
@@ -180,7 +205,12 @@ const PickupDrawer = memo(function PickupDrawer({
           <Text style={styles.avatarText}>{initials}</Text>
         </View>
         <View style={styles.riderInfo}>
-          <Text style={styles.riderName}>{riderName}</Text>
+          <View style={styles.riderNameRow}>
+            <Text style={styles.riderName}>{riderName}</Text>
+            {bookingReference ? (
+              <Text style={styles.bookingRef}>{bookingReference}</Text>
+            ) : null}
+          </View>
           <View style={styles.addressRow}>
             <View style={styles.pickupDot} />
             <Text style={styles.addressText} numberOfLines={1}>
@@ -215,23 +245,37 @@ const PickupDrawer = memo(function PickupDrawer({
             </LinearGradient>
           </Pressable>
 
-          {/* Wait / Resume */}
-          <Pressable
-            style={[styles.buttonWrapper, styles.waitButtonWrapper]}
-            onPress={isWaiting ? onResumeTrip : onWait}
-          >
-            <View style={[styles.waitButton, isWaiting && styles.waitButtonActive]}>
-              <Ionicons
-                name={isWaiting ? 'play-outline' : 'pause-outline'}
-                size={16}
-                color={isWaiting ? '#FF9F0A' : '#8E8E93'}
-                style={styles.ctaIcon}
-              />
-              <Text style={[styles.waitButtonText, isWaiting && styles.waitButtonTextActive]}>
-                {isWaiting ? 'Resume Trip' : 'Wait'}
-              </Text>
-            </View>
-          </Pressable>
+          {/* Wait / Resume  +  Charge  — side by side */}
+          <View style={[styles.secondaryRow, styles.waitButtonWrapper]}>
+            <Pressable
+              style={styles.secondaryButtonFlex}
+              onPress={isWaiting ? onResumeTrip : onWait}
+            >
+              <View style={[styles.waitButton, isWaiting && styles.waitButtonActive]}>
+                <Ionicons
+                  name={isWaiting ? 'play-outline' : 'pause-outline'}
+                  size={16}
+                  color={isWaiting ? '#FF9F0A' : '#8E8E93'}
+                  style={styles.ctaIcon}
+                />
+                <Text style={[styles.waitButtonText, isWaiting && styles.waitButtonTextActive]}>
+                  {isWaiting ? 'Resume' : 'Wait'}
+                </Text>
+              </View>
+            </Pressable>
+
+            <Pressable style={styles.secondaryButtonFlex} onPress={onCharge}>
+              <View style={styles.chargeButton}>
+                <Ionicons
+                  name="receipt-outline"
+                  size={16}
+                  color="#EDB96D"
+                  style={styles.ctaIcon}
+                />
+                <Text style={styles.chargeButtonText}>Charge</Text>
+              </View>
+            </Pressable>
+          </View>
         </>
       ) : rideStatus === 'GOING_TO_PICKUP' ? (
         <Pressable onPress={onArrivedAtPickup} style={styles.buttonWrapper}>
@@ -294,30 +338,33 @@ const PickupDrawer = memo(function PickupDrawer({
           )}
         </View>
       ) : (
-        /* ── Pre-trip: chat/call + ETA ── */
-        <View style={styles.actionsRow}>
-          <Pressable
-            style={styles.iconButton}
-            onPress={() => Alert.alert('Chat', 'Coming soon')}
-          >
-            <Ionicons name="chatbubble-outline" size={20} color="#8E8E93" />
-          </Pressable>
+        /* ── Pre-trip: call + fare + ETA ── */
+        <>
+          {/* Fare row — only shown when fare is available */}
+          {fare ? (
+            <View style={styles.fareRow}>
+              <Text style={styles.fareLabel}>TOTAL FARE</Text>
+              <Text style={styles.fareValue}>{fare}</Text>
+            </View>
+          ) : null}
 
-          <Pressable
-            style={styles.iconButton}
-            onPress={() => Alert.alert('Call', 'Coming soon')}
-          >
-            <Ionicons name="call-outline" size={20} color="#8E8E93" />
-          </Pressable>
+          <View style={styles.actionsRow}>
+            <Pressable
+              style={styles.iconButton}
+              onPress={handleCall}
+            >
+              <Ionicons name="call-outline" size={20} color="#EDB96D" />
+            </Pressable>
 
-          <View style={styles.etaContainer}>
-            <Text style={styles.etaLabel}>EST. ARRIVAL</Text>
-            <Text style={styles.etaValue}>{estimatedTime}</Text>
-            {distance ? (
-              <Text style={styles.distanceText}>{distance}</Text>
-            ) : null}
+            <View style={styles.etaContainer}>
+              <Text style={styles.etaLabel}>EST. ARRIVAL</Text>
+              <Text style={styles.etaValue}>{estimatedTime}</Text>
+              {distance ? (
+                <Text style={styles.distanceText}>{distance}</Text>
+              ) : null}
+            </View>
           </View>
-        </View>
+        </>
       )}
 
       {/* Safe area padding */}
@@ -386,6 +433,18 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 16,
   },
+  riderNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  bookingRef: {
+    color: '#8E8E93',
+    fontSize: 11,
+    fontWeight: '500',
+    letterSpacing: 0.3,
+  },
   avatar: {
     width: 48,
     height: 48,
@@ -453,6 +512,13 @@ const styles = StyleSheet.create({
   waitButtonWrapper: {
     marginTop: -8,
   },
+  secondaryRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  secondaryButtonFlex: {
+    flex: 1,
+  },
   waitButton: {
     paddingVertical: 13,
     borderRadius: 16,
@@ -477,6 +543,23 @@ const styles = StyleSheet.create({
   waitButtonTextActive: {
     color: '#FF9F0A',
   },
+  chargeButton: {
+    paddingVertical: 13,
+    borderRadius: 16,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(237, 185, 109, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(237, 185, 109, 0.3)',
+  },
+  chargeButtonText: {
+    color: '#EDB96D',
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
 
   // Divider
   divider: {
@@ -485,7 +568,32 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
 
-  // Pre-trip: chat/call + ETA
+  // Pre-trip: fare row
+  fareRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(237, 185, 109, 0.08)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(237, 185, 109, 0.15)',
+  },
+  fareLabel: {
+    color: '#8E8E93',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+  },
+  fareValue: {
+    color: '#EDB96D',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+
+  // Pre-trip: call + ETA
   actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
