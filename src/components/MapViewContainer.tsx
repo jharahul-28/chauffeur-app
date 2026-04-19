@@ -36,6 +36,19 @@ interface MapViewContainerProps {
   tripWaypoints?: Coordinate[];
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function isValidCoord(c: Coordinate | undefined | null): c is Coordinate {
+  return (
+    c != null &&
+    typeof c.latitude === 'number' &&
+    typeof c.longitude === 'number' &&
+    isFinite(c.latitude) &&
+    isFinite(c.longitude) &&
+    !(c.latitude === 0 && c.longitude === 0)
+  );
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_REGION = {
@@ -66,7 +79,7 @@ const MapViewContainer: React.FC<MapViewContainerProps> = ({
 
   // ── Fit map to driver + pickup (once, on pickup mode entry) ───────────────
   useEffect(() => {
-    if (isTripMode || !driverLocation || !pickupLocation || hasFittedPickupRef.current || !mapRef.current) return;
+    if (isTripMode || !driverLocation || !isValidCoord(pickupLocation) || hasFittedPickupRef.current || !mapRef.current) return;
 
     mapRef.current.fitToCoordinates(
       [
@@ -80,12 +93,12 @@ const MapViewContainer: React.FC<MapViewContainerProps> = ({
 
   // ── Fit map to full trip route (once, on trip mode entry) ─────────────────
   useEffect(() => {
-    if (!isTripMode || !driverLocation || !tripDestination || hasFittedTripRef.current || !mapRef.current) return;
+    if (!isTripMode || !driverLocation || !isValidCoord(tripDestination) || hasFittedTripRef.current || !mapRef.current) return;
 
     const allPoints: Coordinate[] = [
       { latitude: driverLocation.latitude, longitude: driverLocation.longitude },
-      ...(pickupLocation ? [pickupLocation] : []),
-      ...(tripWaypoints ?? []),
+      ...(isValidCoord(pickupLocation) ? [pickupLocation] : []),
+      ...(tripWaypoints ?? []).filter(isValidCoord),
       tripDestination,
     ];
 
@@ -166,7 +179,7 @@ const MapViewContainer: React.FC<MapViewContainerProps> = ({
         )}
 
         {/* ── Pickup marker ──────────────────────────────────────────────── */}
-        {pickupLocation && (
+        {isValidCoord(pickupLocation) && (
           <Marker
             coordinate={pickupLocation}
             anchor={{ x: 0.5, y: 0.5 }}
@@ -180,7 +193,7 @@ const MapViewContainer: React.FC<MapViewContainerProps> = ({
 
         {/* ── Stoppage markers (trip mode only) ──────────────────────────── */}
         {isTripMode &&
-          tripWaypoints?.map((wp, index) => (
+          tripWaypoints?.filter(isValidCoord).map((wp, index) => (
             <Marker
               key={`stop-${index}`}
               coordinate={wp}
@@ -196,7 +209,7 @@ const MapViewContainer: React.FC<MapViewContainerProps> = ({
           ))}
 
         {/* ── Destination marker (trip mode only) ────────────────────────── */}
-        {isTripMode && tripDestination && (
+        {isTripMode && isValidCoord(tripDestination) && (
           <Marker
             coordinate={tripDestination}
             anchor={{ x: 0.5, y: 1 }}
@@ -210,7 +223,7 @@ const MapViewContainer: React.FC<MapViewContainerProps> = ({
         )}
 
         {/* ── Driving route ───────────────────────────────────────────────── */}
-        {driverLocation && routeDestination && (
+        {driverLocation && isValidCoord(routeDestination) && (
           <DrivingRoute
             origin={{ latitude: driverLocation.latitude, longitude: driverLocation.longitude }}
             destination={routeDestination}

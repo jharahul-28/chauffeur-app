@@ -69,7 +69,12 @@ function dropWaypoint(waypoints: Waypoint[]): Waypoint {
 }
 
 function toCoord(wp: Waypoint): Coordinate {
-    return { latitude: wp.latitude, longitude: wp.longitude };
+    const lat = typeof wp.latitude === 'number' && isFinite(wp.latitude) ? wp.latitude : 0;
+    const lng = typeof wp.longitude === 'number' && isFinite(wp.longitude) ? wp.longitude : 0;
+    if (lat === 0 && lng === 0) {
+        console.warn('[bookingService] Waypoint has invalid/zero coordinates', { id: wp.id, type: wp.waypointType });
+    }
+    return { latitude: lat, longitude: lng };
 }
 
 function formatFare(amount: number | null): string {
@@ -104,8 +109,8 @@ export function mapBookingDetailToRide(
     return {
         id: String(detail.id),
         bookingReference: detail.bookingReference,
-        riderName: detail.metadata.customerName,
-        customerContact: detail.metadata.customerContact,
+        riderName: detail.metadata?.customerName ?? 'Unknown Rider',
+        customerContact: detail.metadata?.customerContact ?? '',
         pickupText: pickup.address,
         destinationText: drop.address,
         pickup: toCoord(pickup),
@@ -113,6 +118,6 @@ export function mapBookingDetailToRide(
         stoppages,
         fare: formatFare(detail.totalFare),
         totalFare: detail.totalFare ?? 0,
-        specialRemarks: detail.metadata.specialRemarks || undefined,
+        specialRemarks: detail.metadata?.specialRemarks || undefined,
     };
 }

@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 import PermissionGate from '@/src/components/PermissionGate';
+import { ErrorBoundary } from '@/src/components/ErrorBoundary';
 
 /**
  * Driver layout — wraps all authenticated driver screens with PermissionGate.
@@ -8,13 +9,15 @@ import PermissionGate from '@/src/components/PermissionGate';
  */
 export default function DriverLayout() {
   return (
-    <PermissionGate>
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          animation: 'fade',
-        }}
-      />
-    </PermissionGate>
+    <ErrorBoundary fallbackTitle="Driver app error">
+      <PermissionGate>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            animation: 'fade',
+          }}
+        />
+      </PermissionGate>
+    </ErrorBoundary>
   );
 }

@@ -36,6 +36,15 @@ export const verifyOtp = async (
 
     const { authToken, user } = response.data;
 
+    console.log('[authService] verifyOtp raw response', {
+        hasAuthToken: !!authToken,
+        userId: user?.id,
+        userStatus: user?.status,
+    });
+
+    if (!authToken) throw new Error('Server did not return an auth token. Please try again.');
+    if (!user?.id || typeof user.id !== 'number') throw new Error('Server returned an invalid user ID.');
+
     // Persist credentials so all subsequent requests can use them
     await setAccessToken(authToken);
     await setChauffeurId(user.id);

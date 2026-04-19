@@ -22,7 +22,6 @@ import Svg, {
 import { bgColors } from '@/src/constants/colors';
 import OtpInput from '@/src/components/OtpInput';
 import { generateOtp, verifyOtp } from '@/src/services/authService';
-import { setAccessToken } from '@/src/services/apiClient';
 
 export default function OtpScreen() {
     const { countryCode, phone } = useLocalSearchParams<{
@@ -48,13 +47,22 @@ export default function OtpScreen() {
 
     const handleLogin = async () => {
         if (!isComplete || loading) return;
+
+        if (!countryCode || !phone) {
+            setError('Session error. Please go back and re-enter your phone number.');
+            return;
+        }
+
         setLoading(true);
         setError('');
         try {
-            const result = await verifyOtp(countryCode!, phone!, otp.join(''));
-            await setAccessToken(result.authToken);
+            console.log('[OTP] Submitting verification', { countryCode, phoneTail: phone.slice(-4) });
+            // verifyOtp internally stores authToken + chauffeurId — no extra calls needed
+            const result = await verifyOtp(countryCode, phone, otp.join(''));
+            console.log('[OTP] Verified successfully, userId:', result.user?.id);
             router.replace('/(driver)/(tabs)/bookings');
-        } catch {
+        } catch (err) {
+            console.error('[OTP] Verification failed:', err);
             setError('OTP is invalid');
             setOtp(['', '', '', '']);
             setTimeout(() => firstInputRef.current?.focus(), 50);

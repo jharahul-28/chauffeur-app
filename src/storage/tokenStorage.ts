@@ -11,6 +11,10 @@ export const getAccessToken = async (): Promise<string | null> => {
 };
 
 export const setAccessToken = async (token: string) => {
+    if (!token) {
+        console.warn('[tokenStorage] setAccessToken called with empty/undefined token — skipping');
+        return;
+    }
     try {
         await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, token);
         return;
@@ -31,7 +35,9 @@ export const removeAccessToken = async () => {
 export const getChauffeurId = async (): Promise<number | null> => {
     try {
         const value = await AsyncStorage.getItem(STORAGE_KEYS.CHAUFFEUR_ID);
-        return value ? parseInt(value, 10) : null;
+        if (!value) return null;
+        const parsed = parseInt(value, 10);
+        return isNaN(parsed) ? null : parsed;
     } catch (error) {
         console.log("Unable to fetch chauffeur id");
         return null;

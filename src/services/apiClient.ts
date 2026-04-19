@@ -8,6 +8,15 @@ import {
 
 export { setAccessToken, removeAccessToken };
 
+type UnauthorizedListener = () => void;
+const unauthorizedListeners = new Set<UnauthorizedListener>();
+
+/** Subscribe to be notified when the API returns 401 (token expired/invalid). */
+export const onUnauthorized = (cb: UnauthorizedListener) => {
+    unauthorizedListeners.add(cb);
+    return () => unauthorizedListeners.delete(cb);
+};
+
 const apiClient = axios.create({
     baseURL: process.env.EXPO_PUBLIC_BASE_URL,
     headers: {
@@ -66,6 +75,8 @@ apiClient.interceptors.response.use(
         if (error.response?.status === 401) {
             await removeAccessToken();
             await removeChauffeurId();
+            console.warn('[API] 401 — credentials cleared, notifying listeners');
+            unauthorizedListeners.forEach((cb) => cb());
         }
 
         return Promise.reject(error);
