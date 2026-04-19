@@ -22,15 +22,11 @@ import { FeedbackPayload } from '../../src/types/feedback';
 interface FeedbackParams {
   rideId?: string;
   riderName?: string;
-  pickupText?: string;
-  destinationText?: string;
-  fare?: string;
 }
 
 // ─── Mock submit ──────────────────────────────────────────────────────────────
 
 async function mockSubmitFeedback(payload: FeedbackPayload): Promise<void> {
-  // Simulate network latency. Replace with real API call when ready.
   await new Promise((resolve) => setTimeout(resolve, 700));
   console.log('[Feedback] Submitted:', payload);
 }
@@ -54,9 +50,6 @@ export default function FeedbackScreen() {
   const {
     rideId = 'ride-unknown',
     riderName = 'Rider',
-    pickupText = '—',
-    destinationText = '—',
-    fare = '—',
   } = useLocalSearchParams<FeedbackParams>();
 
   const [rating, setRating] = useState(0);
@@ -71,7 +64,6 @@ export default function FeedbackScreen() {
       Alert.alert('Rating required', 'Please select a star rating before submitting.');
       return;
     }
-
     setSubmitting(true);
     try {
       await mockSubmitFeedback({ rideId, rating, comment: comment.trim() || undefined });
@@ -146,34 +138,6 @@ export default function FeedbackScreen() {
           )}
         </View>
 
-        {/* ── Trip Summary Card ──────────────────────────────────────────── */}
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryDot} />
-            <View style={styles.summaryInfo}>
-              <Text style={styles.summaryLabel}>PICKUP</Text>
-              <Text style={styles.summaryValue} numberOfLines={2}>{pickupText}</Text>
-            </View>
-          </View>
-
-          <View style={styles.summaryConnector} />
-
-          <View style={styles.summaryRow}>
-            <View style={[styles.summaryDot, styles.summaryDotDest]} />
-            <View style={styles.summaryInfo}>
-              <Text style={styles.summaryLabel}>DESTINATION</Text>
-              <Text style={styles.summaryValue} numberOfLines={2}>{destinationText}</Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.fareRow}>
-            <Text style={styles.fareLabel}>Payment</Text>
-            <Text style={styles.fareValue}>{fare}</Text>
-          </View>
-        </View>
-
         {/* ── Comment Input ──────────────────────────────────────────────── */}
         <View style={styles.inputSection}>
           <Text style={styles.inputLabel}>Additional Comments (optional)</Text>
@@ -232,8 +196,6 @@ const styles = StyleSheet.create({
   scroll: {
     paddingHorizontal: 24,
   },
-
-  // Header
   screenTitle: {
     color: '#FFFFFF',
     fontSize: 28,
@@ -241,8 +203,6 @@ const styles = StyleSheet.create({
     marginBottom: 28,
     letterSpacing: 0.2,
   },
-
-  // Avatar section
   avatarSection: {
     alignItems: 'center',
     marginBottom: 28,
@@ -274,8 +234,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-
-  // Rating
   ratingSection: {
     alignItems: 'center',
     gap: 12,
@@ -287,75 +245,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.2,
   },
-
-  // Trip summary card
-  summaryCard: {
-    backgroundColor: '#1C1C1E',
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 20,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  summaryDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#30D158',
-    marginTop: 4,
-    flexShrink: 0,
-  },
-  summaryDotDest: {
-    backgroundColor: '#FF453A',
-  },
-  summaryConnector: {
-    width: 1.5,
-    height: 18,
-    backgroundColor: '#2C2C2E',
-    marginLeft: 4,
-    marginVertical: 4,
-  },
-  summaryInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  summaryLabel: {
-    color: '#8E8E93',
-    fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 0.8,
-  },
-  summaryValue: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '500',
-    lineHeight: 20,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#2C2C2E',
-    marginVertical: 14,
-  },
-  fareRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  fareLabel: {
-    color: '#8E8E93',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  fareValue: {
-    color: '#EDB96D',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-
-  // Comment input
   inputSection: {
     marginBottom: 24,
     gap: 8,
@@ -377,8 +266,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2C2C2E',
   },
-
-  // CTA
   backButtonWrapper: {
     width: '100%',
     marginBottom: 16,
@@ -395,8 +282,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-
-  // Skip
   skipButton: {
     alignItems: 'center',
     paddingVertical: 8,
@@ -406,8 +291,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-
-  // Success state
   successIcon: {
     marginBottom: 20,
   },

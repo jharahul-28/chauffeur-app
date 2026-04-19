@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchChauffeurProfile, ChauffeurProfile } from '../../../src/services/profileService';
+import AppHeader from '@/src/components/AppHeader';
 
 export default function ProfileScreen() {
-  const insets = useSafeAreaInsets();
   const [profile, setProfile] = useState<ChauffeurProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -22,9 +21,8 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <Text style={styles.headerTitle}>Profile</Text>
-      </View>
+      {/* Standardised header — VELVET centre, hamburger right */}
+      <AppHeader />
 
       <ScrollView
         style={styles.scrollView}
@@ -97,15 +95,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#111111',
-  },
-  header: {
-    paddingHorizontal: 24,
-    paddingBottom: 16,
-  },
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '700',
   },
   scrollView: {
     flex: 1,

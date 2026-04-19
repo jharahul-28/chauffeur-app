@@ -1,43 +1,62 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  ScrollView,
   StatusBar,
   ActivityIndicator,
   TouchableOpacity,
+  Text,
+  ScrollView,
   RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, {
-  Defs,
-  LinearGradient as SvgGradient,
-  Stop,
-  Text as SvgText,
-} from 'react-native-svg';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 
+import AppHeader from '@/src/components/AppHeader';
 import BookingTabs from '@/src/components/BookingTabs';
 import BookingList from '@/src/components/BookingList';
 import { Booking } from '@/src/types/booking';
 import { BookingTab } from '@/src/utils/bookingFilter';
 import { useBookings } from '@/src/hooks/useBookings';
+import { getActionForBooking } from '@/src/utils/bookingNavigationMapper';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function BookingsScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+
+  /**
+   * showPast is set to '1' only when the user navigates here from the
+   * hamburger drawer (RightDrawer). Normal tab-bar entry omits it.
+   */
+  const { showPast } = useLocalSearchParams<{ showPast?: string }>();
+  const showPastTab = showPast === '1';
 
   const [activeTab, setActiveTab] = useState<BookingTab>('current');
-
   const { bookings, isLoading, error, refetch } = useBookings(activeTab);
 
-  const handleGoToPickup = (booking: Booking) => {
+  // If the Past tab becomes hidden (user re-enters via tab bar) while it was
+  // active, reset to Current to avoid showing a stale hidden-tab state.
+  useEffect(() => {
+    if (!showPastTab && activeTab === 'past') {
+      setActiveTab('current');
+    }
+  }, [showPastTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Refetch current tab whenever the screen comes back into focus (e.g. after
+  // completing a ride on the map screen).
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch])
+  );
+
+  const handleBookingAction = (booking: Booking) => {
+    const action = getActionForBooking(booking.bookingId, booking.id, booking.status);
+    if (!action) return;
     router.push({
-      pathname: '/(driver)/driver-home',
-      params: { bookingId: booking.id },
+      pathname: action.navigationTarget as never,
+      params: action.params,
     });
   };
 
@@ -45,31 +64,15 @@ export default function BookingsScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#111111" />
 
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <Svg height="26" width="110" viewBox="0 0 110 26">
-          <Defs>
-            <SvgGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <Stop offset="0%" stopColor="#EDB96D" />
-              <Stop offset="100%" stopColor="#B5783C" />
-            </SvgGradient>
-          </Defs>
-          <SvgText
-            fill="url(#goldGrad)"
-            fontSize="18"
-            fontWeight="600"
-            x="0"
-            y="20"
-            letterSpacing="3"
-          >
-            VELVET
-          </SvgText>
-        </Svg>
-        <Text style={styles.headerTitle}>Bookings</Text>
-      </View>
+      {/* Standardised header — VELVET centre, hamburger right */}
+      <AppHeader />
 
-      {/* Tab control */}
-      <BookingTabs activeTab={activeTab} onTabChange={setActiveTab} />
+      {/* Tab control — Past tab visible only when showPastTab is true */}
+      <BookingTabs
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        showPast={showPastTab}
+      />
 
       {/* Loading state */}
       {isLoading && (
@@ -106,7 +109,7 @@ export default function BookingsScreen() {
           <BookingList
             bookings={bookings}
             tab={activeTab}
-            onGoToPickup={activeTab === 'current' ? handleGoToPickup : undefined}
+            onAction={activeTab === 'current' ? handleBookingAction : undefined}
           />
           <View style={styles.bottomPadding} />
         </ScrollView>
@@ -121,18 +124,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#111111',
-  },
-  header: {
-    paddingHorizontal: 24,
-    paddingBottom: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '700',
   },
   scrollView: {
     flex: 1,

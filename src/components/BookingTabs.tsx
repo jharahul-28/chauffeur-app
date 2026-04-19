@@ -12,11 +12,17 @@ interface Tab {
 interface BookingTabsProps {
   activeTab: BookingTab;
   onTabChange: (tab: BookingTab) => void;
+  /**
+   * When true the "Past" tab is included.
+   * Default: false — normal tab-bar entry hides past bookings.
+   * Set to true when navigating from the hamburger drawer.
+   */
+  showPast?: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TABS: Tab[] = [
+const ALL_TABS: Tab[] = [
   { key: 'current', label: 'Current' },
   { key: 'upcoming', label: 'Upcoming' },
   { key: 'past', label: 'Past' },
@@ -35,10 +41,13 @@ const TABS: Tab[] = [
 const BookingTabs = memo(function BookingTabs({
   activeTab,
   onTabChange,
+  showPast = false,
 }: BookingTabsProps) {
+  const tabs = showPast ? ALL_TABS : ALL_TABS.filter((t) => t.key !== 'past');
+
   return (
     <View style={styles.container}>
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const isActive = tab.key === activeTab;
         return (
           <Pressable

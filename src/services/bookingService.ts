@@ -113,5 +113,6 @@ export function mapBookingDetailToRide(
         stoppages,
         fare: formatFare(detail.totalFare),
         totalFare: detail.totalFare ?? 0,
+        specialRemarks: detail.metadata.specialRemarks || undefined,
     };
 }

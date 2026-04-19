@@ -56,4 +56,6 @@ export interface ActiveRide {
   fare: string;
   /** Raw fare number for calculations. */
   totalFare: number;
+  /** Optional free-text instructions from the customer for this ride. */
+  specialRemarks?: string;
 }

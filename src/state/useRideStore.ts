@@ -41,12 +41,27 @@ export function useRideStore() {
 
   /**
    * Append an extra charge to the current trip.
-   * Called when the driver submits the ChargeModal.
+   * Called when the driver submits the ChargeModal in ADD mode.
    * Safe to call when `ride` is null (no-op).
    */
   const addExtraCharge = useCallback((charge: ExtraCharge) => {
     if (!charge.amount || charge.amount <= 0) return;
     setExtraCharges((prev) => [...prev, charge]);
+  }, []);
+
+  /**
+   * Replace an existing extra charge at the given index.
+   * Called when the driver submits the ChargeModal in EDIT mode.
+   * No-op for invalid indexes or zero-amount charges.
+   *
+   * Extensibility:
+   *  - Replace with a PATCH /extra-charges/:id call for backend sync.
+   */
+  const updateExtraCharge = useCallback((index: number, charge: ExtraCharge) => {
+    if (!charge.amount || charge.amount <= 0) return;
+    setExtraCharges((prev) =>
+      prev.map((c, i) => (i === index ? charge : c))
+    );
   }, []);
 
   /**
@@ -58,5 +73,5 @@ export function useRideStore() {
     setExtraCharges([]);
   }, []);
 
-  return { ride, extraCharges, initRide, updateStatus, addExtraCharge, clearRide };
+  return { ride, extraCharges, initRide, updateStatus, addExtraCharge, updateExtraCharge, clearRide };
 }

@@ -1,4 +1,4 @@
-import React, { useState, memo, useCallback } from 'react';
+import React, { useState, memo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -32,49 +32,69 @@ interface ChargeModalProps {
   visible: boolean;
   onSubmit: (charge: ExtraCharge) => void;
   onDismiss: () => void;
+  /**
+   * When provided, the modal opens in EDIT mode:
+   *  - Amount and type are pre-filled from this charge.
+   *  - Title and submit label change to reflect "Edit".
+   *  - onSubmit replaces the existing charge instead of appending.
+   */
+  initialCharge?: ExtraCharge;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
- * Modal for adding an extra charge (MCD / Toll / Parking) during a trip.
+ * Modal for adding OR editing an extra charge (MCD / Toll / Parking).
  *
- * Flow:
- *  1. Driver enters a numeric amount → charge-type chips are enabled.
- *  2. Driver selects one charge type.
- *  3. Submit is enabled → tapping it calls onSubmit({ amount, type }).
+ * ADD mode  (initialCharge = undefined): blank form, "Add Extra Charge" title.
+ * EDIT mode (initialCharge = ExtraCharge): pre-filled form, "Edit Extra Charge" title.
+ *
+ * The parent is responsible for deciding whether to append or replace in the
+ * ride store — this component only emits the final ExtraCharge value.
  *
  * Extensibility:
  *  - Replace hardcoded types with a dynamic list from a pricing-rules API.
  *  - Add an optional `note` field for free-text driver descriptions.
- *  - Allow multiple charges per trip by keeping the modal open after submit.
+ *  - Support multiple charge submissions by keeping the modal open after submit.
  */
 const ChargeModal = memo(function ChargeModal({
   visible,
   onSubmit,
   onDismiss,
+  initialCharge,
 }: ChargeModalProps) {
   const insets = useSafeAreaInsets();
+  const isEditMode = initialCharge !== undefined;
 
   const [amountText, setAmountText] = useState('');
   const [selectedType, setSelectedType] = useState<ChargeType | null>(null);
+
+  // Sync form state whenever the modal opens (covers both add and edit mode)
+  useEffect(() => {
+    if (visible) {
+      if (initialCharge) {
+        setAmountText(String(initialCharge.amount));
+        setSelectedType(initialCharge.type);
+      } else {
+        setAmountText('');
+        setSelectedType(null);
+      }
+    }
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const parsedAmount = parseFloat(amountText);
   const isAmountValid = !isNaN(parsedAmount) && parsedAmount > 0;
   const canSubmit = isAmountValid && selectedType !== null;
 
   const handleAmountChange = useCallback((text: string) => {
-    // Allow only numeric input with an optional decimal point
     const sanitized = text.replace(/[^0-9.]/g, '');
     setAmountText(sanitized);
-    // Reset type selection when amount is cleared
     if (!sanitized) setSelectedType(null);
   }, []);
 
   const handleSubmit = useCallback(() => {
     if (!canSubmit || !selectedType) return;
     onSubmit({ amount: parsedAmount, type: selectedType });
-    // Reset for next use
     setAmountText('');
     setSelectedType(null);
   }, [canSubmit, parsedAmount, selectedType, onSubmit]);
@@ -84,6 +104,10 @@ const ChargeModal = memo(function ChargeModal({
     setSelectedType(null);
     onDismiss();
   }, [onDismiss]);
+
+  const submitLabel = canSubmit
+    ? `${isEditMode ? 'Update' : 'Add'} ₹${parsedAmount.toLocaleString('en-IN')} · ${selectedType}`
+    : 'Enter amount & select type';
 
   return (
     <Modal
@@ -103,20 +127,30 @@ const ChargeModal = memo(function ChargeModal({
         style={styles.kavWrapper}
         pointerEvents="box-none"
       >
-        <View
-          style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 24) }]}
-        >
-          {/* Header */}
+        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 24) }]}>
+          {/* Handle */}
           <View style={styles.header}>
             <View style={styles.handle} />
           </View>
+
+          {/* Title row */}
           <View style={styles.titleRow}>
             <View style={styles.titleIconWrapper}>
-              <Ionicons name="receipt-outline" size={20} color="#EDB96D" />
+              <Ionicons
+                name={isEditMode ? 'create-outline' : 'receipt-outline'}
+                size={20}
+                color="#EDB96D"
+              />
             </View>
             <View>
-              <Text style={styles.title}>Add Extra Charge</Text>
-              <Text style={styles.subtitle}>Enter amount and select charge type</Text>
+              <Text style={styles.title}>
+                {isEditMode ? 'Edit Extra Charge' : 'Add Extra Charge'}
+              </Text>
+              <Text style={styles.subtitle}>
+                {isEditMode
+                  ? 'Update the amount or charge type'
+                  : 'Enter amount and select charge type'}
+              </Text>
             </View>
           </View>
 
@@ -148,7 +182,6 @@ const ChargeModal = memo(function ChargeModal({
               {CHARGE_TYPES.map((type) => {
                 const isSelected = selectedType === type;
                 const isEnabled = isAmountValid;
-
                 return (
                   <Pressable
                     key={type}
@@ -202,9 +235,7 @@ const ChargeModal = memo(function ChargeModal({
                 color={canSubmit ? '#000' : '#3A3A3C'}
               />
               <Text style={[styles.submitText, !canSubmit && styles.submitTextDisabled]}>
-                {canSubmit
-                  ? `Add ₹${parsedAmount.toLocaleString('en-IN')} · ${selectedType}`
-                  : 'Enter amount & select type'}
+                {submitLabel}
               </Text>
             </LinearGradient>
           </Pressable>
@@ -269,8 +300,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 2,
   },
-
-  // Amount input
   inputSection: {
     marginBottom: 24,
   },
@@ -311,8 +340,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     padding: 0,
   },
-
-  // Charge type chips
   typeSection: {
     marginBottom: 28,
   },
@@ -350,8 +377,6 @@ const styles = StyleSheet.create({
   typeChipLabelDisabled: {
     color: '#3A3A3C',
   },
-
-  // Submit button
   submitWrapper: {
     width: '100%',
   },

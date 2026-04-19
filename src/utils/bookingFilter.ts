@@ -1,4 +1,5 @@
 import { Booking } from '../types/booking';
+import { sortBookings as sortBookingsImpl } from './bookingSorter';
 
 // ─── Tab Types ─────────────────────────────────────────────────────────────────
 
@@ -7,23 +8,11 @@ export type BookingTab = 'current' | 'upcoming' | 'past';
 // ─── Sort ─────────────────────────────────────────────────────────────────────
 
 /**
- * Sorts API-fetched bookings for display within each tab.
- * Filtering is handled server-side via the status query param.
- *
- * Current  → ascending by scheduledAt (soonest first)
- * Upcoming → ascending by date (nearest trip first)
- * Past     → descending by date (most recent first)
+ * Sorts API-fetched bookings for display.
+ * Delegates to bookingSorter: today's bookings first (ascending), then all
+ * other bookings (ascending). The _tab parameter is retained for backward
+ * compatibility but is not used — all tabs share the same ordering.
  */
-export function sortBookings(bookings: Booking[], tab: BookingTab): Booking[] {
-  switch (tab) {
-    case 'current':
-    case 'upcoming':
-      return [...bookings].sort((a, b) => a.date.localeCompare(b.date));
-
-    case 'past':
-      return [...bookings].sort((a, b) => b.date.localeCompare(a.date));
-
-    default:
-      return bookings;
-  }
+export function sortBookings(bookings: Booking[], _tab: BookingTab): Booking[] {
+  return sortBookingsImpl(bookings);
 }

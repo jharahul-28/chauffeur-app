@@ -3,16 +3,20 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Booking } from '@/src/types/booking';
+import { getActionForBooking } from '@/src/utils/bookingNavigationMapper';
 
 interface HighlightedBookingCardProps {
   booking: Booking;
-  onGoToPickup?: () => void;
+  /** Called when the driver taps the CTA button. Parent handles navigation. */
+  onAction?: () => void;
 }
 
 export default function HighlightedBookingCard({
   booking,
-  onGoToPickup,
+  onAction,
 }: HighlightedBookingCardProps) {
+  const action = getActionForBooking(booking.bookingId, booking.id, booking.status);
+
   return (
     <LinearGradient
       colors={['rgba(229, 181, 102, 0.35)', 'rgba(181, 120, 60, 0.15)']}
@@ -35,8 +39,23 @@ export default function HighlightedBookingCard({
 
         <View style={styles.divider} />
 
-        {/* Category Name */}
-        <Text style={styles.categoryName}>{booking.categoryName}</Text>
+        {/* Customer name — replaces categoryName, same size/weight */}
+        <View style={styles.customerNameRow}>
+          <Ionicons name="person-outline" size={17} color="#AAAAAA" />
+          <Text style={styles.categoryName} numberOfLines={1}>
+            {booking.customerName || '—'}
+          </Text>
+        </View>
+
+        {/* Pickup address — directly below customer name */}
+        {booking.pickupAddress ? (
+          <View style={styles.pickupRow}>
+            <Ionicons name="location-outline" size={13} color="#AAAAAA" />
+            <Text style={styles.pickupText} numberOfLines={1}>
+              {booking.pickupAddress}
+            </Text>
+          </View>
+        ) : null}
 
         {/* Vehicle Info Row */}
         <View style={styles.vehicleRow}>
@@ -53,17 +72,49 @@ export default function HighlightedBookingCard({
           </View>
         </View>
 
-        {/* Go to Pickup Button */}
-        <Pressable onPress={onGoToPickup} style={styles.buttonWrapper}>
-          <LinearGradient
-            colors={['#E5B566', '#B5783C']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.button}
+        {/* Special request (structured) — only shown when present */}
+        {(booking.specialRequest || booking.beverages) ? (
+          <View style={styles.remarksRow}>
+            <Ionicons name="information-circle-outline" size={14} color="#EDB96D" />
+            <Text style={styles.remarksText} numberOfLines={2}>
+              {[booking.specialRequest, booking.beverages].filter(Boolean).join(' · ')}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* Legacy special remarks — only shown when present */}
+        {booking.specialRemarks ? (
+          <View style={styles.remarksRow}>
+            <Ionicons name="information-circle-outline" size={14} color="#EDB96D" />
+            <Text style={styles.remarksText} numberOfLines={2}>
+              {booking.specialRemarks}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* CTA Button — hidden for COMPLETED, disabled when no handler */}
+        {action ? (
+          <Pressable
+            onPress={onAction}
+            style={styles.buttonWrapper}
+            disabled={!onAction}
           >
-            <Text style={styles.buttonText}>Go to Pickup  →</Text>
-          </LinearGradient>
-        </Pressable>
+            <LinearGradient
+              colors={['#E5B566', '#B5783C']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[styles.button, !onAction && styles.buttonDisabled]}
+            >
+              <Text style={styles.buttonText}>{action.buttonText}  →</Text>
+            </LinearGradient>
+          </Pressable>
+        ) : (
+          // COMPLETED state — show a muted pill instead of an active button
+          <View style={styles.completedPill}>
+            <Ionicons name="checkmark-circle" size={15} color="#30D158" />
+            <Text style={styles.completedPillText}>Ride Completed</Text>
+          </View>
+        )}
       </View>
     </LinearGradient>
   );
@@ -124,11 +175,29 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(237, 185, 109, 0.12)',
     marginBottom: 16,
   },
+  customerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
   categoryName: {
     color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '700',
-    marginBottom: 14,
+    flex: 1,
+  },
+  pickupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 16,
+  },
+  pickupText: {
+    color: '#AAAAAA',
+    fontSize: 13,
+    fontWeight: '400',
+    flex: 1,
   },
   vehicleRow: {
     flexDirection: 'row',
@@ -176,6 +245,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  remarksRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 7,
+    backgroundColor: 'rgba(237, 185, 109, 0.06)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(237, 185, 109, 0.15)',
+  },
+  remarksText: {
+    color: '#CCCCCC',
+    fontSize: 12,
+    fontStyle: 'italic',
+    flex: 1,
+    lineHeight: 17,
+  },
   buttonWrapper: {
     width: '100%',
   },
@@ -184,10 +272,29 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
   buttonText: {
     color: '#000000',
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+  completedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(48, 209, 88, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(48, 209, 88, 0.2)',
+  },
+  completedPillText: {
+    color: '#30D158',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

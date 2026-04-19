@@ -1,22 +1,27 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import BookingCard from './BookingCard';
 import HighlightedBookingCard from './HighlightedBookingCard';
 import { Booking } from '../types/booking';
 import { BookingTab } from '../utils/bookingFilter';
+import { getCurrentTabBooking } from '../utils/bookingSelector';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface BookingListProps {
   bookings: Booking[];
   tab: BookingTab;
-  onGoToPickup?: (booking: Booking) => void;
+  /** Called with the selected booking when the driver taps the CTA on current tab */
+  onAction?: (booking: Booking) => void;
 }
 
-// ─── Empty state ──────────────────────────────────────────────────────────────
+// ─── Empty state config ───────────────────────────────────────────────────────
 
-const EMPTY_CONFIG: Record<BookingTab, { icon: React.ComponentProps<typeof Ionicons>['name']; title: string; subtitle: string }> = {
+const EMPTY_CONFIG: Record<
+  BookingTab,
+  { icon: React.ComponentProps<typeof Ionicons>['name']; title: string; subtitle: string }
+> = {
   current: {
     icon: 'calendar-outline',
     title: 'No rides today',
@@ -39,19 +44,23 @@ const EMPTY_CONFIG: Record<BookingTab, { icon: React.ComponentProps<typeof Ionic
 /**
  * Renders the booking list for a given tab.
  *
- * Current tab  → highlights the first (nearest) ride, lists the rest below.
+ * Current tab  → selects exactly ONE booking via getCurrentTabBooking()
+ *                (earliest today booking, or most recent overall) and renders
+ *                it as a HighlightedBookingCard with a status-aware CTA.
  * Upcoming/Past → flat list with no highlighted card.
- *
- * Extensibility:
- *  - Add FlatList with paginated loading when backend is integrated
- *  - Pass `isLoading` prop to render skeleton cards
  */
 const BookingList = memo(function BookingList({
   bookings,
   tab,
-  onGoToPickup,
+  onAction,
 }: BookingListProps) {
-  if (bookings.length === 0) {
+  // Memoised — only recomputes when the bookings array reference changes.
+  const currentBooking = useMemo(
+    () => (tab === 'current' ? getCurrentTabBooking(bookings) : null),
+    [tab, bookings],
+  );
+
+  if (bookings.length === 0 || (tab === 'current' && !currentBooking)) {
     const { icon, title, subtitle } = EMPTY_CONFIG[tab];
     return (
       <View style={styles.emptyContainer}>
@@ -62,32 +71,19 @@ const BookingList = memo(function BookingList({
     );
   }
 
-  // Current tab: highlight the first booking (soonest today)
-  if (tab === 'current') {
-    const [featured, ...rest] = bookings;
+  // Current tab: render the single selected booking only
+  if (tab === 'current' && currentBooking) {
     return (
       <View>
         <HighlightedBookingCard
-          booking={featured}
-          onGoToPickup={onGoToPickup ? () => onGoToPickup(featured) : undefined}
+          booking={currentBooking}
+          onAction={onAction ? () => onAction(currentBooking) : undefined}
         />
-        {rest.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <View style={[styles.dot, styles.dotUpcoming]} />
-              <Text style={styles.sectionTitle}>Later Today</Text>
-              <View style={styles.sectionLine} />
-            </View>
-            {rest.map((b) => (
-              <BookingCard key={b.id} booking={b} />
-            ))}
-          </>
-        )}
       </View>
     );
   }
 
-  // Upcoming tab: section header + flat list
+  // Upcoming tab
   if (tab === 'upcoming') {
     return (
       <View>
@@ -103,7 +99,7 @@ const BookingList = memo(function BookingList({
     );
   }
 
-  // Past tab: section header + flat list
+  // Past tab
   return (
     <View>
       <View style={styles.sectionHeader}>

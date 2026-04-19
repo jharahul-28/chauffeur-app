@@ -5,18 +5,25 @@ import { formatCountdown } from '../utils/timeUtils';
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface WaitTimerDisplayProps {
-  remainingSeconds: number;
+  /** Seconds elapsed in the current wait session — counts up from 0. */
+  elapsedSeconds: number;
+  /** True when cumulative free wait time (3 min) has been exceeded. */
   isFreeTimeExceeded: boolean;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
- * Isolated timer display to prevent re-renders from propagating up the tree.
- * Shows remaining free wait time or an "extra charges" notice.
+ * Isolated timer display — rendered only while the driver is waiting.
+ *
+ * Shows elapsed seconds for the current wait session (counts up from 00:00).
+ * Once the cumulative 3-minute free allowance is exceeded it switches to a
+ * billing-notice state.
+ *
+ * Kept as a memo'd leaf so the 1-second tick doesn't re-render the whole drawer.
  */
 const WaitTimerDisplay = memo(function WaitTimerDisplay({
-  remainingSeconds,
+  elapsedSeconds,
   isFreeTimeExceeded,
 }: WaitTimerDisplayProps) {
   return (
@@ -26,8 +33,8 @@ const WaitTimerDisplay = memo(function WaitTimerDisplay({
         <Text style={styles.exceededText}>Extra charges applied</Text>
       ) : (
         <View style={styles.countdownRow}>
-          <Text style={styles.label}>Free wait: </Text>
-          <Text style={styles.countdown}>{formatCountdown(remainingSeconds)}</Text>
+          <Text style={styles.label}>Waiting: </Text>
+          <Text style={styles.elapsed}>{formatCountdown(elapsedSeconds)}</Text>
         </View>
       )}
     </View>
@@ -43,13 +50,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(48, 209, 88, 0.10)',
+    backgroundColor: 'rgba(255, 159, 10, 0.10)',
     borderRadius: 10,
     paddingVertical: 9,
     paddingHorizontal: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(48, 209, 88, 0.2)',
+    borderColor: 'rgba(255, 159, 10, 0.25)',
   },
   containerExceeded: {
     backgroundColor: 'rgba(255, 69, 58, 0.10)',
@@ -62,7 +69,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   dotActive: {
-    backgroundColor: '#30D158',
+    backgroundColor: '#FF9F0A',
   },
   dotExceeded: {
     backgroundColor: '#FF453A',
@@ -76,8 +83,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
-  countdown: {
-    color: '#30D158',
+  elapsed: {
+    color: '#FF9F0A',
     fontSize: 15,
     fontWeight: '700',
   },

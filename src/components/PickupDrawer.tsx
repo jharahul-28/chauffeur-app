@@ -1,5 +1,5 @@
 import React, { memo, useMemo } from 'react';
-import { View, Text, StyleSheet, Pressable, Alert, Linking } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, Linking, ActivityIndicator } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -11,10 +11,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RideStatus, Stoppage } from '../types/ride';
 import WaitTimerDisplay from './WaitTimerDisplay';
+import ChargeIconButton from './ChargeIconButton';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Collapsed peek height is shared across all states (handle + status + rider + button). */
 const COLLAPSED_HEIGHT = 220;
 
 const SPRING_CONFIG = {
@@ -27,38 +27,35 @@ const SPRING_CONFIG = {
 
 export interface PickupDrawerProps {
   riderName: string;
-  /** e.g. "VLV-20260411-6D9B4" */
   bookingReference?: string;
-  /** Raw contact from API, e.g. "98765 43210" or "919876543210" */
   customerContact?: string;
   pickupLocationText: string;
   estimatedTime?: string;
   distance?: string;
-  /** Formatted fare string, e.g. "₹2,630" */
+  /** Kept for API compatibility — no longer rendered in the UI. */
   fare?: string;
   rideStatus: RideStatus;
-  /** Required when rideStatus === 'TRIP_STARTED'. */
   destinationText?: string;
-  /** Ordered stoppages — shown in trip-started state. */
   stoppages?: Stoppage[];
-  /** Called when driver taps "Arrived at Pickup". */
+  /** Number of extra charges added — shown as badge on the icon button. */
+  chargeCount?: number;
+  /** Optional customer instructions shown in the pre-trip details panel. */
+  specialRemarks?: string;
   onArrivedAtPickup: () => void;
-  /** Called when driver taps "Enter OTP". */
   onEnterOTP: () => void;
-  /** Called when driver taps "End Trip". */
   onEndTrip?: () => void;
-  /** Called when driver taps "Wait". */
   onWait?: () => void;
-  /** Called when driver taps "Resume". */
   onResumeTrip?: () => void;
-  /** Called when driver taps "Charge" — opens ChargeModal in parent. */
-  onCharge?: () => void;
-  /** Whether the driver is currently in a wait state. */
+  /** Opens the ChargesSummaryModal (list + add + edit). */
+  onOpenChargesSummary?: () => void;
   isWaiting?: boolean;
-  /** Remaining free wait seconds (used for timer display). */
-  remainingWaitTime?: number;
-  /** Whether free wait time has been exceeded. */
+  /** Current wait timer seconds — starts from backend totalWaitingSeconds and increments each second. */
+  elapsedWaitTime?: number;
   isFreeTimeExceeded?: boolean;
+  /** True while trip completion API call is in-flight. */
+  isEndingTrip?: boolean;
+  /** Unlocks the "Arrived at Pickup" button once the location API confirms proximity. */
+  arrivedAtPickup?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -74,19 +71,6 @@ function getInitials(name: string): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-/**
- * Expandable bottom drawer showing ride info.
- *
- * State-driven content:
- *   GOING_TO_PICKUP    → ETA/distance info + "Arrived at Pickup" CTA
- *   ARRIVED_AT_PICKUP  → "Enter OTP" CTA
- *   OTP_PENDING        → "Enter OTP" CTA (modal handled by parent)
- *   TRIP_STARTED       → destination + stoppages list + "End Trip" placeholder
- *
- * Extending for future states:
- *   1. Add the new RideStatus variant to the union in types/ride.ts
- *   2. Add a matching case in the status-label and CTA section below
- */
 const PickupDrawer = memo(function PickupDrawer({
   riderName,
   bookingReference,
@@ -94,19 +78,22 @@ const PickupDrawer = memo(function PickupDrawer({
   pickupLocationText,
   estimatedTime = '—',
   distance,
-  fare,
   rideStatus,
   destinationText,
   stoppages = [],
+  chargeCount = 0,
+  specialRemarks,
   onArrivedAtPickup,
   onEnterOTP,
   onEndTrip,
   onWait,
   onResumeTrip,
-  onCharge,
+  onOpenChargesSummary,
   isWaiting = false,
-  remainingWaitTime = 180,
+  elapsedWaitTime = 0,
   isFreeTimeExceeded = false,
+  isEndingTrip = false,
+  arrivedAtPickup = false,
 }: PickupDrawerProps) {
   const insets = useSafeAreaInsets();
   const bottomPad = Math.max(insets.bottom, 12);
@@ -119,7 +106,6 @@ const PickupDrawer = memo(function PickupDrawer({
       Alert.alert('No contact', 'Customer contact is not available.');
       return;
     }
-    // Normalise: strip spaces/dashes, ensure leading +
     const digits = customerContact.replace(/[\s\-()]/g, '');
     const tel = digits.startsWith('+') ? digits : `+${digits}`;
     Linking.openURL(`tel:${tel}`).catch(() =>
@@ -127,18 +113,16 @@ const PickupDrawer = memo(function PickupDrawer({
     );
   };
 
-  // Dynamic expanded height: larger for trip-started to fit stoppages + wait button + timer
+  // Dynamic expanded height: accounts for stoppages
   const expandedHeight = useMemo(() => {
     if (isTripStarted) {
-      // Base: handle + status + rider + end-trip btn + wait btn + timer(when active) + divider + trip details
-      return 500 + stoppages.length * 38;
+      return 460 + stoppages.length * 38;
     }
-    return 370;
+    return 340;
   }, [isTripStarted, stoppages.length]);
 
   const maxTranslateY = expandedHeight - COLLAPSED_HEIGHT;
 
-  // Start fully expanded
   const translateY = useSharedValue(0);
   const gestureStartY = useSharedValue(0);
 
@@ -154,7 +138,6 @@ const PickupDrawer = memo(function PickupDrawer({
       const fastDown = event.velocityY > 500;
       const fastUp = event.velocityY < -500;
       const pastMidpoint = translateY.value > maxTranslateY / 2;
-
       const shouldCollapse = fastDown || (!fastUp && pastMidpoint);
       translateY.value = withSpring(
         shouldCollapse ? maxTranslateY : 0,
@@ -166,7 +149,7 @@ const PickupDrawer = memo(function PickupDrawer({
     transform: [{ translateY: translateY.value }],
   }));
 
-  // ── Status label config ──────────────────────────────────────────────────
+  // ── Status label ────────────────────────────────────────────────────────────
   const STATUS_LABELS: Record<RideStatus, string> = {
     GOING_TO_PICKUP: 'Going to Pickup',
     ARRIVED_AT_PICKUP: 'Arrived at Pickup',
@@ -175,7 +158,6 @@ const PickupDrawer = memo(function PickupDrawer({
     TRIP_COMPLETED: 'Trip Completed',
   };
   const statusLabel = isWaiting ? 'Waiting...' : STATUS_LABELS[rideStatus];
-
   const statusColor = isWaiting ? '#FF9F0A' : isTripStarted ? '#30D158' : '#EDB96D';
 
   return (
@@ -222,30 +204,39 @@ const PickupDrawer = memo(function PickupDrawer({
 
       {/* ── CTA button ─────────────────────────────────────────────────────── */}
       {isTripStarted ? (
-        /* Trip in Progress: End Trip (gold) + Wait/Resume (secondary) */
         <>
-          {/* Wait timer display — only shown while waiting */}
+          {/* Wait timer — visible only while waiting */}
           {isWaiting && (
             <WaitTimerDisplay
-              remainingSeconds={remainingWaitTime}
+              elapsedSeconds={elapsedWaitTime}
               isFreeTimeExceeded={isFreeTimeExceeded}
             />
           )}
 
           {/* End Trip */}
-          <Pressable style={styles.buttonWrapper} onPress={onEndTrip}>
+          <Pressable
+            style={styles.buttonWrapper}
+            onPress={onEndTrip}
+            disabled={isEndingTrip}
+          >
             <LinearGradient
-              colors={['#E5B566', '#B5783C']}
+              colors={isEndingTrip ? ['#8E6B35', '#6B4A22'] : ['#E5B566', '#B5783C']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.ctaButton}
             >
-              <Ionicons name="flag-outline" size={18} color="#000" style={styles.ctaIcon} />
-              <Text style={styles.ctaButtonText}>End Trip</Text>
+              {isEndingTrip ? (
+                <ActivityIndicator size="small" color="#000" style={styles.ctaIcon} />
+              ) : (
+                <Ionicons name="flag-outline" size={18} color="#000" style={styles.ctaIcon} />
+              )}
+              <Text style={styles.ctaButtonText}>
+                {isEndingTrip ? 'Ending Trip…' : 'End Trip'}
+              </Text>
             </LinearGradient>
           </Pressable>
 
-          {/* Wait / Resume  +  Charge  — side by side */}
+          {/* Wait / Resume  +  Charges icon — side by side */}
           <View style={[styles.secondaryRow, styles.waitButtonWrapper]}>
             <Pressable
               style={styles.secondaryButtonFlex}
@@ -264,32 +255,27 @@ const PickupDrawer = memo(function PickupDrawer({
               </View>
             </Pressable>
 
-            <Pressable style={styles.secondaryButtonFlex} onPress={onCharge}>
-              <View style={styles.chargeButton}>
-                <Ionicons
-                  name="receipt-outline"
-                  size={16}
-                  color="#EDB96D"
-                  style={styles.ctaIcon}
-                />
-                <Text style={styles.chargeButtonText}>Charge</Text>
-              </View>
-            </Pressable>
+            <ChargeIconButton count={chargeCount} onPress={onOpenChargesSummary ?? (() => {})} />
           </View>
         </>
       ) : rideStatus === 'GOING_TO_PICKUP' ? (
-        <Pressable onPress={onArrivedAtPickup} style={styles.buttonWrapper}>
+        <Pressable
+          onPress={onArrivedAtPickup}
+          style={styles.buttonWrapper}
+          disabled={!arrivedAtPickup}
+        >
           <LinearGradient
-            colors={['#E5B566', '#B5783C']}
+            colors={arrivedAtPickup ? ['#E5B566', '#B5783C'] : ['#4A3D28', '#3A2E1E']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.ctaButton}
           >
-            <Text style={styles.ctaButtonText}>Arrived at Pickup</Text>
+            <Text style={[styles.ctaButtonText, !arrivedAtPickup && styles.ctaButtonTextDisabled]}>
+              Arrived at Pickup
+            </Text>
           </LinearGradient>
         </Pressable>
       ) : (
-        /* ARRIVED_AT_PICKUP | OTP_PENDING → Enter OTP */
         <Pressable onPress={onEnterOTP} style={styles.buttonWrapper}>
           <LinearGradient
             colors={['#E5B566', '#B5783C']}
@@ -338,21 +324,19 @@ const PickupDrawer = memo(function PickupDrawer({
           )}
         </View>
       ) : (
-        /* ── Pre-trip: call + fare + ETA ── */
+        /* ── Pre-trip: special remarks (if any) + call + ETA ── */
         <>
-          {/* Fare row — only shown when fare is available */}
-          {fare ? (
-            <View style={styles.fareRow}>
-              <Text style={styles.fareLabel}>TOTAL FARE</Text>
-              <Text style={styles.fareValue}>{fare}</Text>
+          {specialRemarks ? (
+            <View style={styles.remarksBox}>
+              <Ionicons name="information-circle-outline" size={14} color="#EDB96D" />
+              <Text style={styles.remarksText} numberOfLines={3}>
+                {specialRemarks}
+              </Text>
             </View>
           ) : null}
 
           <View style={styles.actionsRow}>
-            <Pressable
-              style={styles.iconButton}
-              onPress={handleCall}
-            >
+            <Pressable style={styles.iconButton} onPress={handleCall}>
               <Ionicons name="call-outline" size={20} color="#EDB96D" />
             </Pressable>
 
@@ -367,7 +351,6 @@ const PickupDrawer = memo(function PickupDrawer({
         </>
       )}
 
-      {/* Safe area padding */}
       <View style={{ height: bottomPad }} />
     </Animated.View>
   );
@@ -393,8 +376,6 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 20,
   },
-
-  // Handle
   handleArea: {
     width: '100%',
     alignItems: 'center',
@@ -407,8 +388,6 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: '#3A3A3C',
   },
-
-  // Status row
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -425,8 +404,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.3,
   },
-
-  // Rider row
   riderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -486,8 +463,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     flex: 1,
   },
-
-  // CTA buttons
   buttonWrapper: {
     width: '100%',
     marginBottom: 16,
@@ -508,6 +483,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
+  },
+  ctaButtonTextDisabled: {
+    color: '#8E7A5A',
   },
   waitButtonWrapper: {
     marginTop: -8,
@@ -543,54 +521,30 @@ const styles = StyleSheet.create({
   waitButtonTextActive: {
     color: '#FF9F0A',
   },
-  chargeButton: {
-    paddingVertical: 13,
-    borderRadius: 16,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(237, 185, 109, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(237, 185, 109, 0.3)',
-  },
-  chargeButtonText: {
-    color: '#EDB96D',
-    fontSize: 15,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
-
-  // Divider
   divider: {
     height: 1,
     backgroundColor: '#2C2C2E',
     marginBottom: 16,
   },
-
-  // Pre-trip: fare row
-  fareRow: {
+  // Pre-trip: special remarks
+  remarksBox: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: 'rgba(237, 185, 109, 0.08)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: 'rgba(237, 185, 109, 0.07)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: 'rgba(237, 185, 109, 0.15)',
+    borderColor: 'rgba(237, 185, 109, 0.18)',
   },
-  fareLabel: {
-    color: '#8E8E93',
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.6,
-  },
-  fareValue: {
-    color: '#EDB96D',
-    fontSize: 18,
-    fontWeight: '700',
+  remarksText: {
+    color: '#CCCCCC',
+    fontSize: 13,
+    fontStyle: 'italic',
+    flex: 1,
+    lineHeight: 18,
   },
 
   // Pre-trip: call + ETA
@@ -630,7 +584,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Trip-started: destination + stoppages
+  // Trip started: destination + stoppages
   tripDetails: {
     gap: 16,
   },

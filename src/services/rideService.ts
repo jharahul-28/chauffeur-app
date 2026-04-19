@@ -38,10 +38,20 @@ export const postVerifyOtp = async (
     console.log('[rideService] verify-otp ✓', bookingVehicleId);
 };
 
+// ─── Types ─────────────────────────────────────────────────────────────────────
+
+export interface WaitingResponse {
+  /** Cumulative waiting seconds across all sessions for this booking. */
+  totalWaitingSeconds: number;
+  /** Pre-formatted timer string, e.g. "00:04:42". */
+  formattedWaitingTime: string;
+}
+
 /** Called when the driver taps "Wait" during an active trip. */
-export const postWaiting = (bookingVehicleId: string): Promise<void> =>
-    apiClient.post(`${base(bookingVehicleId)}/waiting`).then(() => {
-        console.log('[rideService] waiting ✓', bookingVehicleId);
+export const postWaiting = (bookingVehicleId: string): Promise<WaitingResponse> =>
+    apiClient.post<WaitingResponse>(`${base(bookingVehicleId)}/waiting`).then((res) => {
+        console.log('[rideService] waiting ✓', bookingVehicleId, res.data);
+        return res.data;
     });
 
 /** Called when the driver taps "Resume" after a wait. */
@@ -55,3 +65,22 @@ export const postComplete = (bookingVehicleId: string): Promise<void> =>
     apiClient.post(`${base(bookingVehicleId)}/complete`).then(() => {
         console.log('[rideService] complete ✓', bookingVehicleId);
     });
+
+export interface LocationUpdateResponse {
+  arrived: boolean;
+  arrivedWaypointType: 'PICKUP' | 'STOP' | 'DESTINATION';
+  distanceMeters: number;
+}
+
+/** Sends the driver's current GPS coordinates to the backend. */
+export const updateDriverLocation = (
+    bookingVehicleId: string,
+    lat: number,
+    lng: number,
+): Promise<LocationUpdateResponse> =>
+    apiClient
+        .post<LocationUpdateResponse>(`${base(bookingVehicleId)}/location-update`, {
+            currentLatitude: lat,
+            currentLongitude: lng,
+        })
+        .then((res) => res.data);

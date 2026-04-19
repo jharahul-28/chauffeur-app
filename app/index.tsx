@@ -7,6 +7,9 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Defs, LinearGradient as SvgGradient, Stop, Text as SvgText } from "react-native-svg";
@@ -47,122 +50,135 @@ export default function Index() {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.keyboardView}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        {/* Brand Heading */}
+        <View style={styles.headingContainer}>
+          <Svg height="40" width="100%" viewBox="0 0 300 40">
+            <Defs>
+              <SvgGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <Stop offset="0%" stopColor="#EDB96D" />
+                <Stop offset="100%" stopColor="#B5783C" />
+              </SvgGradient>
+            </Defs>
 
-      {/* Brand Heading */}
-      <View style={styles.headingContainer}>
-        <Svg height="40" width="100%" viewBox="0 0 300 40">
-          <Defs>
-            <SvgGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <Stop offset="0%" stopColor="#EDB96D" />
-              <Stop offset="100%" stopColor="#B5783C" />
-            </SvgGradient>
-          </Defs>
+            <SvgText
+              fill="url(#goldGradient)"
+              fontSize="28"
+              fontWeight="600"
+              x="50%"
+              y="28"
+              textAnchor="middle"
+              letterSpacing="4"
+            >
+              VELVET
+            </SvgText>
+          </Svg>
 
-          <SvgText
-            fill="url(#goldGradient)"
-            fontSize="28"
-            fontWeight="600"
-            x="50%"
-            y="28"
-            textAnchor="middle"
-            letterSpacing="4"
-          >
-            VELVET
-          </SvgText>
-        </Svg>
+          <Text style={styles.companySecondNameText}>EXPERIENCE</Text>
+        </View>
 
-        <Text style={styles.companySecondNameText}>EXPERIENCE</Text>
-      </View>
-
-      {/* Login Section */}
-      <View style={styles.driverCredentialsInputContainer}>
-        <Text style={styles.driverCredentialsInputMainheading}>
-          Driver Login
-        </Text>
-
-        <Text style={styles.driverCredentialsInputSecondaryheading}>
-          Log in to continue setting up your driver account.
-        </Text>
-
-        <View style={styles.phoneNumberInputContainer}>
-          <Text style={styles.phoneNumberInputHeading}>
-            Phone Number
+        {/* Login Section */}
+        <View style={styles.driverCredentialsInputContainer}>
+          <Text style={styles.driverCredentialsInputMainheading}>
+            Driver Login
           </Text>
 
-          <View style={styles.phoneRow}>
+          <Text style={styles.driverCredentialsInputSecondaryheading}>
+            Log in to continue setting up your driver account.
+          </Text>
 
-            {/* Country Code */}
-            <View style={styles.countryCodeWrapper}>
-              <BlurView intensity={40} tint="light" style={styles.inputBlur}>
-                <Text style={styles.plusSymbol}>+</Text>
+          <View style={styles.phoneNumberInputContainer}>
+            <Text style={styles.phoneNumberInputHeading}>
+              Phone Number
+            </Text>
 
-                <TextInput
-                  value={countryCode}
-                  onChangeText={handleCountryCodeChange}
-                  keyboardType="number-pad"
-                  maxLength={3}
-                  style={styles.countryCodeInput}
-                />
-              </BlurView>
+            <View style={styles.phoneRow}>
+
+              {/* Country Code */}
+              <View style={styles.countryCodeWrapper}>
+                <BlurView intensity={40} tint="light" style={styles.inputBlur}>
+                  <Text style={styles.plusSymbol}>+</Text>
+
+                  <TextInput
+                    value={countryCode}
+                    onChangeText={handleCountryCodeChange}
+                    keyboardType="number-pad"
+                    maxLength={3}
+                    style={styles.countryCodeInput}
+                  />
+                </BlurView>
+              </View>
+
+              {/* Phone Number */}
+              <View style={styles.phoneNumberWrapper}>
+                <BlurView intensity={40} tint="light" style={styles.inputBlur}>
+                  <TextInput
+                    value={phoneNumber}
+                    onChangeText={(text) =>
+                      setPhoneNumber(text.replace(/\D/g, ""))
+                    }
+                    keyboardType="number-pad"
+                    maxLength={10}
+                    placeholder="Enter phone number"
+                    placeholderTextColor="#777"
+                    style={styles.phoneNumberInput}
+                  />
+                </BlurView>
+              </View>
+
             </View>
-
-            {/* Phone Number */}
-            <View style={styles.phoneNumberWrapper}>
-              <BlurView intensity={40} tint="light" style={styles.inputBlur}>
-                <TextInput
-                  value={phoneNumber}
-                  onChangeText={(text) =>
-                    setPhoneNumber(text.replace(/\D/g, ""))
-                  }
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  placeholder="Enter phone number"
-                  placeholderTextColor="#777"
-                  style={styles.phoneNumberInput}
-                />
-              </BlurView>
-            </View>
-
           </View>
         </View>
-      </View>
 
-      {/* Login Button */}
-      <Pressable
-        disabled={!isValidPhone || loading}
-        onPress={handleLogin}
-        style={{ width: "100%" }}
-      >
-        <LinearGradient
-          colors={["#E5B566", "#B5783C"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={[
-            styles.loginButton,
-            (!isValidPhone || loading) && styles.loginDisabled,
-          ]}
+        {/* Login Button */}
+        <Pressable
+          disabled={!isValidPhone || loading}
+          onPress={handleLogin}
+          style={{ width: "100%" }}
         >
-          {loading ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text style={styles.loginButtonText}>Send OTP</Text>
-          )}
-        </LinearGradient>
-      </Pressable>
-
-    </View>
+          <LinearGradient
+            colors={["#E5B566", "#B5783C"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={[
+              styles.loginButton,
+              (!isValidPhone || loading) && styles.loginDisabled,
+            ]}
+          >
+            {loading ? (
+              <ActivityIndicator color="#000" />
+            ) : (
+              <Text style={styles.loginButtonText}>Send OTP</Text>
+            )}
+          </LinearGradient>
+        </Pressable>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
 
-  container: {
+  keyboardView: {
     flex: 1,
     backgroundColor: bgColors.mainBG,
+  },
+
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 24,
+    paddingVertical: 40,
   },
 
   headingContainer: {

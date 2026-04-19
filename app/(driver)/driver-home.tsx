@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Pressable,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,13 +18,17 @@ import RideInfoPanel from '../../src/components/RideInfoPanel';
 import PickupDrawer from '../../src/components/PickupDrawer';
 import OTPModal from '../../src/components/OTPModal';
 import ChargeModal from '../../src/components/ChargeModal';
+import ChargesSummaryModal from '../../src/components/ChargesSummaryModal';
 import { useDriverLocation } from '../../src/hooks/useDriverLocation';
 import { useLocationSync } from '../../src/hooks/useLocationSync';
 import { RouteInfo } from '../../src/components/DrivingRoute';
 import { formatEta, formatDistance } from '../../src/utils/routeUtils';
 import { useRideStore } from '../../src/state/useRideStore';
 import { useWaitTimer } from '../../src/hooks/useWaitTimer';
-import { useBookingDetail, RideDetailData } from '../../src/hooks/useBookingDetail';
+import { useBookingDetail } from '../../src/hooks/useBookingDetail';
+import { logWaitEvent } from '../../src/utils/waitLogger';
+import { ExtraCharge } from '../../src/types/charge';
+import { BookingStatus } from '../../src/types/booking';
 import {
   postDriverOnTheWay,
   postArrived,
@@ -32,13 +37,16 @@ import {
   postContinue,
   postComplete,
 } from '../../src/services/rideService';
-import { ExtraCharge } from '../../src/types/charge';
+import { submitCharges } from '../../src/services/bookingApi';
+import { aggregateCharges } from '../../src/utils/chargeAggregator';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** Search params passed from Bookings → "Go to Pickup". */
 interface PickupParams {
   bookingId?: string;
+  bookingVehicleId?: string;
+  /** Booking status passed from the bookings list — used to restore ride state. */
+  bookingStatus?: BookingStatus;
 }
 
 // ─── Top-bar label per ride status ────────────────────────────────────────────
@@ -51,6 +59,21 @@ const STATUS_HEADER: Record<string, string> = {
   TRIP_COMPLETED: 'Trip Completed',
 };
 
+// ─── Booking status → initial ride status mapping ─────────────────────────────
+
+function bookingStatusToRideStatus(status: BookingStatus | undefined) {
+  switch (status) {
+    case 'ARRIVED':
+      return 'ARRIVED_AT_PICKUP' as const;
+    case 'OTP_VERIFIED':
+    case 'IN_PROGRESS':
+    case 'WAITING':
+      return 'TRIP_STARTED' as const;
+    default:
+      return 'GOING_TO_PICKUP' as const;
+  }
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function DriverHomeScreen() {
@@ -58,16 +81,24 @@ export default function DriverHomeScreen() {
   const insets = useSafeAreaInsets();
   const [isOnline, setIsOnline] = useState(false);
   const [otpModalVisible, setOtpModalVisible] = useState(false);
+
+  // ── Charge modal state ────────────────────────────────────────────────────
   const [chargeModalVisible, setChargeModalVisible] = useState(false);
+  const [chargesSummaryVisible, setChargesSummaryVisible] = useState(false);
+  /**
+   * Index into extraCharges[] being edited, or null when adding a new charge.
+   */
+  const [editingChargeIndex, setEditingChargeIndex] = useState<number | null>(null);
+
+  const [isEndingTrip, setIsEndingTrip] = useState(false);
+  const [isArrivedAtPickup, setIsArrivedAtPickup] = useState(false);
 
   const { location, hasPermission, isLoading, error } = useDriverLocation();
 
-  // Background location sync — active whenever the driver is on this screen
-  // (treated as "logged in" state). Stops on unmount automatically.
-  useLocationSync(true);
-
   // ── Navigation params ──────────────────────────────────────────────────────
-  const { bookingId } = useLocalSearchParams<PickupParams>();
+  const { bookingId, bookingVehicleId, bookingStatus } = useLocalSearchParams<PickupParams>();
+
+  const { startSync, stopSync } = useLocationSync(bookingVehicleId, () => setIsArrivedAtPickup(true));
   const isPickupMode = Boolean(bookingId);
 
   // ── Booking detail fetch ──────────────────────────────────────────────────
@@ -78,48 +109,71 @@ export default function DriverHomeScreen() {
   } = useBookingDetail(bookingId);
 
   // ── Ride state machine ────────────────────────────────────────────────────
-  const { ride, extraCharges, initRide, updateStatus, addExtraCharge, clearRide } = useRideStore();
+  const {
+    ride,
+    extraCharges,
+    initRide,
+    updateStatus,
+    addExtraCharge,
+    updateExtraCharge,
+    clearRide,
+  } = useRideStore();
 
-  // ── Wait timer (cumulative per trip) ──────────────────────────────────────
+  // ── Wait timer ────────────────────────────────────────────────────────────
   const {
     isWaiting,
-    remainingFreeWaitTime,
+    elapsedTime,
     isFreeTimeExceeded,
     startWaiting,
     stopWaiting,
-    reset: resetWaitTimer,
+    resetTimer: resetWaitTimer,
   } = useWaitTimer();
 
-  // Initialise ride once booking detail loads, then notify backend
+  // Initialise ride once booking detail loads and restore status from booking
   useEffect(() => {
-    if (isPickupMode && bookingDetailRide && !ride) {
-      // Merge bookingVehicleId (route param = bookings list id) into ride data
-      const rideData: Omit<RideDetailData & { bookingVehicleId: string }, never> = {
-        ...bookingDetailRide,
-        bookingVehicleId: bookingId!,
-      };
-      initRide(rideData);
-      postDriverOnTheWay(bookingId!).catch((err) =>
-        console.error('[driver-home] postDriverOnTheWay failed:', err)
-      );
+    if (isPickupMode && bookingDetailRide && !ride && bookingVehicleId) {
+      initRide({ ...bookingDetailRide, bookingVehicleId });
+      startSync();
+
+      const initialRideStatus = bookingStatusToRideStatus(bookingStatus as BookingStatus | undefined);
+
+      if (initialRideStatus === 'GOING_TO_PICKUP') {
+        // Only notify backend when transitioning from ASSIGNED.
+        // DRIVER_ON_THE_WAY is already set on the backend — re-calling would be a no-op at best.
+        if (!bookingStatus || bookingStatus === 'ASSIGNED') {
+          postDriverOnTheWay(bookingVehicleId).catch((err) =>
+            console.error('[driver-home] postDriverOnTheWay failed:', err)
+          );
+        }
+      } else {
+        // Restore ride to the correct state without triggering API side effects
+        updateStatus(initialRideStatus);
+
+        if (bookingStatus === 'WAITING') {
+          // WAITING → driver is already waiting; activate the timer so the
+          // drawer shows "Resume" (not "Wait") and the wait timer is visible.
+          // We don't have the prior elapsed seconds from the booking list, so
+          // start from 0 — backend is the source of truth for wait fare.
+          startWaiting(0);
+        }
+      }
     }
   }, [bookingDetailRide]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clear ride on unmount / navigating back to avoid stale state
+  // Clear ride on unmount
   useEffect(() => {
     return () => {
       if (isPickupMode) clearRide();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Route info (ETA + distance from Directions API) ───────────────────────
+  // ── Route info ────────────────────────────────────────────────────────────
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
-
   const handleRouteUpdate = useCallback((info: RouteInfo) => {
     setRouteInfo(info);
   }, []);
 
-  // ── Map coordinates derived from ride state ───────────────────────────────
+  // ── Map coordinates ───────────────────────────────────────────────────────
   const pickupCoordinate: Coordinate | undefined = ride?.pickup ?? undefined;
 
   const tripDestination: Coordinate | undefined =
@@ -152,7 +206,6 @@ export default function DriverHomeScreen() {
     setRouteInfo(null);
   }, [updateStatus]);
 
-  // Async OTP verifier passed to OTPModal — throws on wrong OTP so modal shows error
   const handleVerifyOtp = useCallback(async (otp: string) => {
     if (!ride?.bookingVehicleId) throw new Error('No active ride');
     await postVerifyOtp(ride.bookingVehicleId, otp);
@@ -164,54 +217,151 @@ export default function DriverHomeScreen() {
   }, [updateStatus]);
 
   const handleEndTrip = useCallback(() => {
-    if (!ride) return;
-    stopWaiting();
-    resetWaitTimer();
-    updateStatus('TRIP_COMPLETED');
-    // Fire-and-forget: don't block navigation on API call
-    postComplete(ride.bookingVehicleId).catch((err) =>
-      console.error('[driver-home] postComplete failed:', err)
+    if (!ride || isEndingTrip) return;
+
+    Alert.alert(
+      'End Trip?',
+      'Are you sure you want to end the trip?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'End Trip',
+          style: 'destructive',
+          onPress: async () => {
+            setIsEndingTrip(true);
+            stopWaiting();
+
+            try {
+              await postComplete(ride.bookingVehicleId);
+              stopSync();
+              resetWaitTimer();
+              updateStatus('TRIP_COMPLETED');
+              clearRide();
+
+              // Navigate to pending amount screen first, then feedback
+              router.push({
+                pathname: '/(driver)/pending-amount',
+                params: {
+                  rideId: ride.id,
+                  bookingVehicleId: ride.bookingVehicleId,
+                  riderName: ride.riderName,
+                  pickupText: ride.pickupText,
+                  destinationText: ride.destinationText,
+                  fare: ride.fare,
+                },
+              });
+            } catch (err) {
+              console.error('[driver-home] endTrip failed:', err);
+              Alert.alert('Failed to End Trip', 'Something went wrong. Please try again.');
+              setIsEndingTrip(false);
+            }
+          },
+        },
+      ],
     );
-    router.push({
-      pathname: '/(driver)/feedback',
-      params: {
-        rideId: ride.id,
-        riderName: ride.riderName,
-        pickupText: ride.pickupText,
-        destinationText: ride.destinationText,
-        fare: ride.fare,
-      },
-    });
-  }, [ride, stopWaiting, resetWaitTimer, updateStatus, router]);
+  }, [ride, isEndingTrip, stopWaiting, resetWaitTimer, updateStatus, clearRide, router]);
+
+  // ── Wait / Resume ────────────────────────────────────────────────────────
 
   const handleWait = useCallback(() => {
-    startWaiting();
-    if (ride?.bookingVehicleId) {
-      postWaiting(ride.bookingVehicleId).catch((err) =>
-        console.error('[driver-home] postWaiting failed:', err)
-      );
-    }
-  }, [startWaiting, ride]);
+    Alert.alert(
+      'Start Waiting?',
+      'Do you want to start waiting?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Wait',
+          onPress: async () => {
+            if (!ride?.bookingVehicleId) return;
+            try {
+              logWaitEvent('WAIT_START', ride.id);
+              const data = await postWaiting(ride.bookingVehicleId);
+              startWaiting(data.totalWaitingSeconds);
+            } catch (err) {
+              console.error('[driver-home] postWaiting failed:', err);
+              Alert.alert('Error', 'Failed to start waiting. Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  }, [ride, startWaiting]);
 
   const handleResumeTrip = useCallback(() => {
-    stopWaiting();
-    if (ride?.bookingVehicleId) {
-      postContinue(ride.bookingVehicleId).catch((err) =>
-        console.error('[driver-home] postContinue failed:', err)
-      );
-    }
-  }, [stopWaiting, ride]);
+    Alert.alert(
+      'Resume Trip?',
+      'Do you want to resume the trip?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Resume',
+          onPress: async () => {
+            if (!ride?.bookingVehicleId) return;
+            try {
+              logWaitEvent('WAIT_RESUME', ride.id);
+              await postContinue(ride.bookingVehicleId);
+              stopWaiting();
+            } catch (err) {
+              console.error('[driver-home] postContinue failed:', err);
+              Alert.alert('Error', 'Failed to resume trip. Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  }, [ride, stopWaiting]);
 
   // ── Extra charge handlers ─────────────────────────────────────────────────
 
-  const handleChargeSubmit = useCallback((charge: ExtraCharge) => {
-    addExtraCharge(charge);
+  const handleOpenChargesSummary = useCallback(() => {
+    setChargesSummaryVisible(true);
+  }, []);
+
+  const handleOpenAddCharge = useCallback(() => {
+    setChargesSummaryVisible(false);
+    setEditingChargeIndex(null);
+    setChargeModalVisible(true);
+  }, []);
+
+  const handleOpenEditCharge = useCallback((index: number) => {
+    setChargesSummaryVisible(false);
+    setEditingChargeIndex(index);
+    setChargeModalVisible(true);
+  }, []);
+
+  /**
+   * Called when ChargeModal saves — updates local state then immediately
+   * submits the full charges snapshot to the backend.
+   */
+  const handleChargeSubmit = useCallback(async (charge: ExtraCharge) => {
+    let updatedCharges: ExtraCharge[];
+    if (editingChargeIndex !== null) {
+      updatedCharges = extraCharges.map((c, i) => (i === editingChargeIndex ? charge : c));
+      updateExtraCharge(editingChargeIndex, charge);
+    } else {
+      updatedCharges = [...extraCharges, charge];
+      addExtraCharge(charge);
+    }
     setChargeModalVisible(false);
-  }, [addExtraCharge]);
+    setEditingChargeIndex(null);
+
+    // Submit immediately after every save
+    if (ride?.bookingVehicleId) {
+      try {
+        await submitCharges(ride.bookingVehicleId, aggregateCharges(updatedCharges));
+      } catch (err) {
+        console.error('[driver-home] submitCharges failed:', err);
+        Alert.alert('Warning', 'Charge saved locally but failed to sync. It will be retried.');
+      }
+    }
+  }, [editingChargeIndex, extraCharges, addExtraCharge, updateExtraCharge, ride]);
+
+  const handleChargeDismiss = useCallback(() => {
+    setChargeModalVisible(false);
+    setEditingChargeIndex(null);
+  }, []);
 
   // ── Permission denied fallback ─────────────────────────────────────────────
-  // Note: PermissionGate in the driver layout already blocks before this screen
-  // mounts. This is a secondary in-screen fallback for edge cases.
   if (hasPermission === false) {
     return (
       <View style={styles.centeredContainer}>
@@ -228,7 +378,6 @@ export default function DriverHomeScreen() {
   const headerTitle = ride ? (STATUS_HEADER[ride.status] ?? 'En Route to Pickup') : 'En Route to Pickup';
   const headerSubtitle = ride?.riderName ?? (isDetailLoading ? 'Loading…' : '');
 
-  // Show full-screen loading while booking detail is being fetched
   if (isPickupMode && isDetailLoading) {
     return (
       <View style={styles.centeredContainer}>
@@ -238,7 +387,6 @@ export default function DriverHomeScreen() {
     );
   }
 
-  // Show full-screen error if detail fetch failed
   if (isPickupMode && detailError) {
     return (
       <View style={styles.centeredContainer}>
@@ -251,6 +399,9 @@ export default function DriverHomeScreen() {
       </View>
     );
   }
+
+  const chargeBeingEdited =
+    editingChargeIndex !== null ? extraCharges[editingChargeIndex] : undefined;
 
   return (
     <View style={styles.root}>
@@ -265,14 +416,9 @@ export default function DriverHomeScreen() {
 
       {/* ── Top overlay ─────────────────────────────────────────────────────── */}
       <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
-
         {isPickupMode ? (
-          /* ── Pickup mode: back button + ride label ── */
           <View style={styles.pickupHeader}>
-            <Pressable
-              style={styles.backButton}
-              onPress={() => router.back()}
-            >
+            <Pressable style={styles.backButton} onPress={() => router.back()}>
               <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
             </Pressable>
             <View style={styles.pickupHeaderLabel}>
@@ -281,16 +427,14 @@ export default function DriverHomeScreen() {
                 <Text style={styles.pickupHeaderSub}>{headerSubtitle}</Text>
               ) : null}
             </View>
-            {/* Extra charge badge — shown when charges exist */}
             {extraCharges.length > 0 && (
-              <View style={styles.chargeBadge}>
+              <Pressable style={styles.chargeBadge} onPress={handleOpenChargesSummary}>
                 <Ionicons name="receipt-outline" size={12} color="#EDB96D" />
                 <Text style={styles.chargeBadgeText}>{extraCharges.length}</Text>
-              </View>
+              </Pressable>
             )}
           </View>
         ) : (
-          /* ── Normal mode: online/offline toggle ── */
           <View style={styles.statusCard}>
             <View style={styles.statusLeft}>
               <View
@@ -320,7 +464,6 @@ export default function DriverHomeScreen() {
           </View>
         )}
 
-        {/* GPS loading badge */}
         {isLoading && (
           <View style={styles.loadingBadge}>
             <ActivityIndicator size="small" color="#FFC107" />
@@ -328,7 +471,6 @@ export default function DriverHomeScreen() {
           </View>
         )}
 
-        {/* Error badge */}
         {error && !isLoading && (
           <View style={[styles.loadingBadge, styles.errorBadge]}>
             <Text style={styles.errorText}>⚠ {error}</Text>
@@ -349,15 +491,19 @@ export default function DriverHomeScreen() {
           rideStatus={ride.status}
           destinationText={ride.destinationText}
           stoppages={ride.stoppages}
+          chargeCount={extraCharges.length}
+          specialRemarks={ride.specialRemarks}
           onArrivedAtPickup={handleArrivedAtPickup}
           onEnterOTP={handleEnterOTP}
           onEndTrip={handleEndTrip}
           onWait={handleWait}
           onResumeTrip={handleResumeTrip}
-          onCharge={() => setChargeModalVisible(true)}
+          onOpenChargesSummary={handleOpenChargesSummary}
           isWaiting={isWaiting}
-          remainingWaitTime={remainingFreeWaitTime}
+          elapsedWaitTime={elapsedTime}
           isFreeTimeExceeded={isFreeTimeExceeded}
+          isEndingTrip={isEndingTrip}
+          arrivedAtPickup={isArrivedAtPickup}
         />
       ) : (
         <RideInfoPanel />
@@ -374,11 +520,21 @@ export default function DriverHomeScreen() {
         />
       )}
 
-      {/* ── Charge Modal ─────────────────────────────────────────────────────── */}
+      {/* ── Charges Summary Modal ────────────────────────────────────────────── */}
+      <ChargesSummaryModal
+        visible={chargesSummaryVisible}
+        charges={extraCharges}
+        onDismiss={() => setChargesSummaryVisible(false)}
+        onAddCharge={handleOpenAddCharge}
+        onEditCharge={handleOpenEditCharge}
+      />
+
+      {/* ── Charge Modal (ADD or EDIT mode) ─────────────────────────────────── */}
       <ChargeModal
         visible={chargeModalVisible}
         onSubmit={handleChargeSubmit}
-        onDismiss={() => setChargeModalVisible(false)}
+        onDismiss={handleChargeDismiss}
+        initialCharge={chargeBeingEdited}
       />
     </View>
   );
@@ -391,8 +547,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#111111',
   },
-
-  // Top overlay
   topOverlay: {
     position: 'absolute',
     top: 0,
@@ -401,8 +555,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 8,
   },
-
-  // Normal mode: status card
   statusCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -443,8 +595,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 1,
   },
-
-  // Pickup mode: header
   pickupHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -496,8 +646,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-
-  // Badges
   loadingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -521,8 +669,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-
-  // Permission denied / loading / error full-screen states
   centeredContainer: {
     flex: 1,
     backgroundColor: '#111111',

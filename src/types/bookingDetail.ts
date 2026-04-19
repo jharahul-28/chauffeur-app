@@ -23,6 +23,8 @@ export interface BookingDetailResponse {
     customerName: string;
     customerContact: string;
     customerType: string;
+    /** Optional driver notes / special instructions from the customer. */
+    specialRemarks?: string;
   };
   rideDate: string | null;
   pickupTime: string | null;
