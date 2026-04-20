@@ -1,5 +1,5 @@
 import React, { memo, useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import BookingCard from './BookingCard';
 import HighlightedBookingCard from './HighlightedBookingCard';
@@ -99,7 +99,7 @@ const BookingList = memo(function BookingList({
     );
   }
 
-  // Past tab
+  // Past tab — cards are tappable when onAction is provided
   return (
     <View>
       <View style={styles.sectionHeader}>
@@ -107,9 +107,19 @@ const BookingList = memo(function BookingList({
         <Text style={styles.sectionTitle}>Completed Rides</Text>
         <View style={styles.sectionLine} />
       </View>
-      {bookings.map((b) => (
-        <BookingCard key={b.id} booking={b} />
-      ))}
+      {bookings.map((b) =>
+        onAction ? (
+          <TouchableOpacity
+            key={b.id}
+            activeOpacity={0.75}
+            onPress={() => onAction(b)}
+          >
+            <BookingCard booking={b} />
+          </TouchableOpacity>
+        ) : (
+          <BookingCard key={b.id} booking={b} />
+        ),
+      )}
     </View>
   );
 });

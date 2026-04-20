@@ -41,6 +41,11 @@ export interface PickupDrawerProps {
   chargeCount?: number;
   /** Optional customer instructions shown in the pre-trip details panel. */
   specialRemarks?: string;
+  /** Structured special request (beverages + note) shown below specialRemarks. */
+  specialRequest?: {
+    beverages?: string[];
+    other?: string;
+  };
   onArrivedAtPickup: () => void;
   onEnterOTP: () => void;
   onEndTrip?: () => void;
@@ -54,8 +59,6 @@ export interface PickupDrawerProps {
   isFreeTimeExceeded?: boolean;
   /** True while trip completion API call is in-flight. */
   isEndingTrip?: boolean;
-  /** Unlocks the "Arrived at Pickup" button once the location API confirms proximity. */
-  arrivedAtPickup?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -83,6 +86,7 @@ const PickupDrawer = memo(function PickupDrawer({
   stoppages = [],
   chargeCount = 0,
   specialRemarks,
+  specialRequest,
   onArrivedAtPickup,
   onEnterOTP,
   onEndTrip,
@@ -93,7 +97,6 @@ const PickupDrawer = memo(function PickupDrawer({
   elapsedWaitTime = 0,
   isFreeTimeExceeded = false,
   isEndingTrip = false,
-  arrivedAtPickup = false,
 }: PickupDrawerProps) {
   const insets = useSafeAreaInsets();
   const bottomPad = Math.max(insets.bottom, 12);
@@ -113,13 +116,16 @@ const PickupDrawer = memo(function PickupDrawer({
     );
   };
 
-  // Dynamic expanded height: accounts for stoppages
+  const hasSpecialRequest =
+    (specialRequest?.beverages?.length ?? 0) > 0 || !!specialRequest?.other;
+
+  // Dynamic expanded height: accounts for stoppages and special request lines
   const expandedHeight = useMemo(() => {
     if (isTripStarted) {
       return 460 + stoppages.length * 38;
     }
-    return 340;
-  }, [isTripStarted, stoppages.length]);
+    return 340 + (hasSpecialRequest ? 56 : 0);
+  }, [isTripStarted, stoppages.length, hasSpecialRequest]);
 
   const maxTranslateY = expandedHeight - COLLAPSED_HEIGHT;
 
@@ -259,20 +265,14 @@ const PickupDrawer = memo(function PickupDrawer({
           </View>
         </>
       ) : rideStatus === 'GOING_TO_PICKUP' ? (
-        <Pressable
-          onPress={onArrivedAtPickup}
-          style={styles.buttonWrapper}
-          disabled={!arrivedAtPickup}
-        >
+        <Pressable onPress={onArrivedAtPickup} style={styles.buttonWrapper}>
           <LinearGradient
-            colors={arrivedAtPickup ? ['#E5B566', '#B5783C'] : ['#4A3D28', '#3A2E1E']}
+            colors={['#E5B566', '#B5783C']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.ctaButton}
           >
-            <Text style={[styles.ctaButtonText, !arrivedAtPickup && styles.ctaButtonTextDisabled]}>
-              Arrived at Pickup
-            </Text>
+            <Text style={styles.ctaButtonText}>Arrived at Pickup</Text>
           </LinearGradient>
         </Pressable>
       ) : (
@@ -293,23 +293,12 @@ const PickupDrawer = memo(function PickupDrawer({
       <View style={styles.divider} />
 
       {isTripStarted ? (
-        /* ── Trip started: destination + stoppages ── */
+        /* ── Trip started: pending stops first, then final destination ── */
         <View style={styles.tripDetails}>
-          {/* Destination */}
-          <View style={styles.tripSection}>
-            <Text style={styles.tripSectionLabel}>DESTINATION</Text>
-            <View style={styles.tripLocationRow}>
-              <View style={styles.destDot} />
-              <Text style={styles.tripLocationText} numberOfLines={2}>
-                {destinationText ?? '—'}
-              </Text>
-            </View>
-          </View>
-
-          {/* Stoppages */}
+          {/* Pending Stops — shown before destination per UX spec */}
           {stoppages.length > 0 && (
             <View style={styles.tripSection}>
-              <Text style={styles.tripSectionLabel}>STOPS ({stoppages.length})</Text>
+              <Text style={styles.tripSectionLabel}>PENDING STOPS ({stoppages.length})</Text>
               {stoppages.map((stop, index) => (
                 <View key={stop.id} style={styles.stopRow}>
                   <View style={styles.stopNumberBadge}>
@@ -322,9 +311,20 @@ const PickupDrawer = memo(function PickupDrawer({
               ))}
             </View>
           )}
+
+          {/* Final Destination */}
+          <View style={styles.tripSection}>
+            <Text style={styles.tripSectionLabel}>FINAL DESTINATION</Text>
+            <View style={styles.tripLocationRow}>
+              <View style={styles.destDot} />
+              <Text style={styles.tripLocationText} numberOfLines={2}>
+                {destinationText ?? '—'}
+              </Text>
+            </View>
+          </View>
         </View>
       ) : (
-        /* ── Pre-trip: special remarks (if any) + call + ETA ── */
+        /* ── Pre-trip: special remarks + special request + call + ETA ── */
         <>
           {specialRemarks ? (
             <View style={styles.remarksBox}>
@@ -334,6 +334,24 @@ const PickupDrawer = memo(function PickupDrawer({
               </Text>
             </View>
           ) : null}
+
+          {hasSpecialRequest && (
+            <View style={styles.specialRequestBox}>
+              <Text style={styles.specialRequestTitle}>Special Request</Text>
+              {(specialRequest?.beverages?.length ?? 0) > 0 && (
+                <Text style={styles.specialRequestLine}>
+                  {'· Beverages: '}
+                  {specialRequest!.beverages!.join(', ')}
+                </Text>
+              )}
+              {specialRequest?.other ? (
+                <Text style={styles.specialRequestLine}>
+                  {'· Note: '}
+                  {specialRequest.other}
+                </Text>
+              ) : null}
+            </View>
+          )}
 
           <View style={styles.actionsRow}>
             <Pressable style={styles.iconButton} onPress={handleCall}>
@@ -484,9 +502,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-  ctaButtonTextDisabled: {
-    color: '#8E7A5A',
-  },
   waitButtonWrapper: {
     marginTop: -8,
   },
@@ -526,6 +541,31 @@ const styles = StyleSheet.create({
     backgroundColor: '#2C2C2E',
     marginBottom: 16,
   },
+  // Pre-trip: structured special request
+  specialRequestBox: {
+    backgroundColor: 'rgba(100, 210, 255, 0.07)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(100, 210, 255, 0.18)',
+    gap: 3,
+  },
+  specialRequestTitle: {
+    color: '#64D2FF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    marginBottom: 3,
+    textTransform: 'uppercase',
+  },
+  specialRequestLine: {
+    color: '#CCCCCC',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+
   // Pre-trip: special remarks
   remarksBox: {
     flexDirection: 'row',

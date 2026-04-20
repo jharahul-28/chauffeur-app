@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  ActivityIndicator,
   ScrollView,
   Alert,
 } from 'react-native';
@@ -45,7 +44,6 @@ export default function PendingAmountScreen() {
 
   // ── Billing state ─────────────────────────────────────────────────────────
   const [billing, setBilling] = useState<BookingBilling | null>(null);
-  const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState(false);
 
   // ── Charge modal state ────────────────────────────────────────────────────
@@ -54,7 +52,6 @@ export default function PendingAmountScreen() {
 
   const fetchBilling = useCallback(async () => {
     if (!bookingVehicleId) return;
-    setLoading(true);
     setFetchError(false);
     try {
       const data = await getBookingDetails(bookingVehicleId);
@@ -62,8 +59,6 @@ export default function PendingAmountScreen() {
     } catch (err) {
       console.error('[pending-amount] getBookingDetails failed:', err);
       setFetchError(true);
-    } finally {
-      setLoading(false);
     }
   }, [bookingVehicleId]);
 
@@ -80,7 +75,6 @@ export default function PendingAmountScreen() {
     if (!bookingVehicleId) return;
     try {
       await submitCharges(bookingVehicleId, aggregateCharges(updated));
-      // Refetch billing so balanceAmount reflects the new charges
       await fetchBilling();
     } catch (err) {
       console.error('[pending-amount] submitCharges failed:', err);
@@ -121,9 +115,7 @@ export default function PendingAmountScreen() {
               <Text style={styles.amountLabel}>Amount to be Paid</Text>
             </View>
 
-            {loading ? (
-              <ActivityIndicator size="small" color="#EDB96D" />
-            ) : displayAmount !== null ? (
+            {displayAmount !== null ? (
               <Text style={styles.amountValue}>
                 ₹{displayAmount.toLocaleString('en-IN', {
                   minimumFractionDigits: 2,

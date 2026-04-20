@@ -58,4 +58,9 @@ export interface ActiveRide {
   totalFare: number;
   /** Optional free-text instructions from the customer for this ride. */
   specialRemarks?: string;
+  /** Structured beverage + other special request from the customer. */
+  specialRequest?: {
+    beverages?: string[];
+    other?: string;
+  };
 }

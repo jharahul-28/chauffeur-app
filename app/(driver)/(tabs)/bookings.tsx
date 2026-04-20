@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   StatusBar,
-  ActivityIndicator,
   TouchableOpacity,
   Text,
   ScrollView,
@@ -60,6 +59,13 @@ export default function BookingsScreen() {
     });
   };
 
+  const handlePastBookingPress = (booking: Booking) => {
+    router.push({
+      pathname: '/(driver)/past-booking-details' as never,
+      params: { bookingId: booking.bookingId },
+    });
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#111111" />
@@ -73,13 +79,6 @@ export default function BookingsScreen() {
         onTabChange={setActiveTab}
         showPast={showPastTab}
       />
-
-      {/* Loading state */}
-      {isLoading && (
-        <View style={styles.centeredState}>
-          <ActivityIndicator size="large" color="#EDB96D" />
-        </View>
-      )}
 
       {/* Error state */}
       {!isLoading && error && (
@@ -109,7 +108,13 @@ export default function BookingsScreen() {
           <BookingList
             bookings={bookings}
             tab={activeTab}
-            onAction={activeTab === 'current' ? handleBookingAction : undefined}
+            onAction={
+              activeTab === 'current'
+                ? handleBookingAction
+                : activeTab === 'past'
+                ? handlePastBookingPress
+                : undefined
+            }
           />
           <View style={styles.bottomPadding} />
         </ScrollView>

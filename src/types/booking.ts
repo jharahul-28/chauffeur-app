@@ -36,6 +36,8 @@ export interface ApiBooking {
     customerName?: string;
     /** Pickup address text. */
     pickupAddress?: string;
+    /** Booking reference code, e.g. "VLV-20260411-6D9B4". */
+    bookingReference?: string;
     /** Structured special request from the customer. */
     specialRequest?: {
       other?: string;
@@ -77,6 +79,8 @@ export interface Booking {
   beverages?: string;
   /** Free-text special instructions from the customer, if any. */
   specialRemarks?: string;
+  /** Booking reference code, e.g. "VLV-20260411-6D9B4". */
+  bookingReference?: string;
   /** Full ISO datetime "YYYY-MM-DDTHH:mm:ss" used for sort-key precision. Undefined for unscheduled bookings. */
   rideDateTime?: string;
 }
@@ -140,6 +144,7 @@ export function mapApiBooking(raw: ApiBooking): Booking {
         ? beverageList.join(', ')
         : undefined,
     specialRemarks: raw.metadata.specialRemarks || undefined,
+    bookingReference: raw.metadata.bookingReference || undefined,
     rideDateTime: hasSchedule ? `${raw.rideDate}T${raw.pickupTime}` : undefined,
   };
 }

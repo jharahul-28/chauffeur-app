@@ -39,12 +39,17 @@ export default function HighlightedBookingCard({
 
         <View style={styles.divider} />
 
-        {/* Customer name — replaces categoryName, same size/weight */}
+        {/* Customer name + booking reference */}
         <View style={styles.customerNameRow}>
           <Ionicons name="person-outline" size={17} color="#AAAAAA" />
           <Text style={styles.categoryName} numberOfLines={1}>
             {booking.customerName || '—'}
           </Text>
+          {booking.bookingReference ? (
+            <View style={styles.refBadge}>
+              <Text style={styles.refText}>{booking.bookingReference}</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Pickup address — directly below customer name */}
@@ -180,12 +185,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginBottom: 8,
+    flexWrap: 'wrap',
   },
   categoryName: {
     color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '700',
     flex: 1,
+  },
+  refBadge: {
+    backgroundColor: 'rgba(237, 185, 109, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(237, 185, 109, 0.2)',
+  },
+  refText: {
+    color: '#EDB96D',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
   pickupRow: {
     flexDirection: 'row',

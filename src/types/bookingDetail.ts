@@ -26,6 +26,11 @@ export interface BookingDetailResponse {
     /** Optional driver notes / special instructions from the customer. */
     specialRemarks?: string;
   };
+  /** Structured special request — top-level field in the API response. */
+  specialRequest?: {
+    other?: string;
+    beverages?: string[];
+  };
   rideDate: string | null;
   pickupTime: string | null;
   bookingSource: string;

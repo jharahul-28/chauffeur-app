@@ -40,15 +40,6 @@ import {
 import { submitCharges } from '../../src/services/bookingApi';
 import { aggregateCharges } from '../../src/utils/chargeAggregator';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface PickupParams {
-  bookingId?: string;
-  bookingVehicleId?: string;
-  /** Booking status passed from the bookings list — used to restore ride state. */
-  bookingStatus?: BookingStatus;
-}
-
 // ─── Top-bar label per ride status ────────────────────────────────────────────
 
 const STATUS_HEADER: Record<string, string> = {
@@ -91,14 +82,16 @@ export default function DriverHomeScreen() {
   const [editingChargeIndex, setEditingChargeIndex] = useState<number | null>(null);
 
   const [isEndingTrip, setIsEndingTrip] = useState(false);
-  const [isArrivedAtPickup, setIsArrivedAtPickup] = useState(false);
 
   const { location, hasPermission, isLoading, error } = useDriverLocation();
 
   // ── Navigation params ──────────────────────────────────────────────────────
-  const { bookingId, bookingVehicleId, bookingStatus } = useLocalSearchParams<PickupParams>();
+  const params = useLocalSearchParams();
+  const bookingId = params.bookingId as string | undefined;
+  const bookingVehicleId = params.bookingVehicleId as string | undefined;
+  const bookingStatus = params.bookingStatus as BookingStatus | undefined;
 
-  const { startSync, stopSync } = useLocationSync(bookingVehicleId, () => setIsArrivedAtPickup(true));
+  const { startSync, stopSync } = useLocationSync(bookingVehicleId);
   const isPickupMode = Boolean(bookingId);
 
   // ── Booking detail fetch ──────────────────────────────────────────────────
@@ -133,32 +126,34 @@ export default function DriverHomeScreen() {
   useEffect(() => {
     if (isPickupMode && bookingDetailRide && !ride && bookingVehicleId) {
       initRide({ ...bookingDetailRide, bookingVehicleId });
-      startSync();
 
       const initialRideStatus = bookingStatusToRideStatus(bookingStatus as BookingStatus | undefined);
 
       if (initialRideStatus === 'GOING_TO_PICKUP') {
-        // Only notify backend when transitioning from ASSIGNED.
-        // DRIVER_ON_THE_WAY is already set on the backend — re-calling would be a no-op at best.
         if (!bookingStatus || bookingStatus === 'ASSIGNED') {
           postDriverOnTheWay(bookingVehicleId).catch((err) =>
             console.error('[driver-home] postDriverOnTheWay failed:', err)
           );
         }
       } else {
-        // Restore ride to the correct state without triggering API side effects
         updateStatus(initialRideStatus);
 
         if (bookingStatus === 'WAITING') {
-          // WAITING → driver is already waiting; activate the timer so the
-          // drawer shows "Resume" (not "Wait") and the wait timer is visible.
-          // We don't have the prior elapsed seconds from the booking list, so
-          // start from 0 — backend is the source of truth for wait fare.
           startWaiting(0);
         }
       }
     }
   }, [bookingDetailRide]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Location sync lifecycle — tied exclusively to an active ride.
+  // Starts the moment a ride with a valid bookingVehicleId is in state,
+  // stops automatically when the ride clears (trip end) or the screen unmounts.
+  // This is the ONLY place startSync/stopSync are called.
+  useEffect(() => {
+    if (!ride?.bookingVehicleId) return;
+    startSync();
+    return () => stopSync();
+  }, [ride?.bookingVehicleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear ride on unmount
   useEffect(() => {
@@ -233,7 +228,6 @@ export default function DriverHomeScreen() {
 
             try {
               await postComplete(ride.bookingVehicleId);
-              stopSync();
               resetWaitTimer();
               updateStatus('TRIP_COMPLETED');
               clearRide();
@@ -381,7 +375,6 @@ export default function DriverHomeScreen() {
   if (isPickupMode && isDetailLoading) {
     return (
       <View style={styles.centeredContainer}>
-        <ActivityIndicator size="large" color="#EDB96D" />
         <Text style={styles.loadingLabel}>Loading booking…</Text>
       </View>
     );
@@ -493,6 +486,7 @@ export default function DriverHomeScreen() {
           stoppages={ride.stoppages}
           chargeCount={extraCharges.length}
           specialRemarks={ride.specialRemarks}
+          specialRequest={ride.specialRequest}
           onArrivedAtPickup={handleArrivedAtPickup}
           onEnterOTP={handleEnterOTP}
           onEndTrip={handleEndTrip}
@@ -503,7 +497,6 @@ export default function DriverHomeScreen() {
           elapsedWaitTime={elapsedTime}
           isFreeTimeExceeded={isFreeTimeExceeded}
           isEndingTrip={isEndingTrip}
-          arrivedAtPickup={isArrivedAtPickup}
         />
       ) : (
         <RideInfoPanel />

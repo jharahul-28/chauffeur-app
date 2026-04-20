@@ -5,6 +5,10 @@ import {
     removeAccessToken,
     removeChauffeurId,
 } from "../storage/tokenStorage";
+import { incrementLoader, decrementLoader } from "../state/useLoaderStore";
+
+// Endpoints excluded from the global loading indicator (high-frequency background calls).
+const LOADER_SKIP_PATTERNS = ['/location-update'];
 
 export { setAccessToken, removeAccessToken };
 
@@ -32,6 +36,10 @@ apiClient.interceptors.request.use(
             config.headers["auth-key"] = token;
         }
 
+        const shouldTrack = !LOADER_SKIP_PATTERNS.some((p) => config.url?.includes(p));
+        if (shouldTrack) incrementLoader();
+        (config as any)._tracked = shouldTrack;
+
         // ── Request log ──────────────────────────────────────────────────────
         console.log('[API] ➡️  Request', {
             method: config.method?.toUpperCase(),
@@ -45,11 +53,16 @@ apiClient.interceptors.request.use(
 
         return config;
     },
-    (error) => Promise.reject(error)
+    (error) => {
+        // Request setup failed before it left the device — still decrement if tracked.
+        if ((error.config as any)?._tracked) decrementLoader();
+        return Promise.reject(error);
+    }
 );
 
 apiClient.interceptors.response.use(
     (response) => {
+        if ((response.config as any)._tracked) decrementLoader();
         // ── Response log ─────────────────────────────────────────────────────
         console.log('[API] ✅ Response', {
             status: response.status,
@@ -71,6 +84,8 @@ apiClient.interceptors.response.use(
             message: error.message,
             responseData: error.response?.data,
         });
+
+        if ((error.config as any)?._tracked) decrementLoader();
 
         if (error.response?.status === 401) {
             await removeAccessToken();
