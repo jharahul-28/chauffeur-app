@@ -1,80 +1,85 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as Location from 'expo-location';
 import { AppState, AppStateStatus } from 'react-native';
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
+export type LocationStatus = 'loading' | 'granted' | 'denied' | 'blocked';
 
-export interface LocationPermissionState {
-  /** null while still checking; true/false after first check. */
-  permissionGranted: boolean | null;
-  /** null while still checking; true/false after first check. */
-  gpsEnabled: boolean | null;
-  /** True only during the very first async check. */
-  isChecking: boolean;
-  /** Manually re-trigger a permission + GPS status check. */
+export interface UseLocationPermissionReturn {
+  status: LocationStatus;
+  ask: () => Promise<void>;
   recheck: () => Promise<void>;
 }
 
-// ─── Hook ──────────────────────────────────────────────────────────────────────
+export function useLocationPermission(): UseLocationPermissionReturn {
+  const [status, setStatus] = useState<LocationStatus>('loading');
+  const isMounted = useRef(true);
+  const isAsking = useRef(false);
 
-/**
- * Monitors foreground location permission and GPS service state.
- *
- * - Performs an initial check on mount.
- * - Re-checks every time the app returns to the foreground (AppState 'active').
- * - Exposes `recheck` so the PermissionGate's "Open Settings" button can
- *   trigger an immediate re-evaluation after the user returns from Settings.
- *
- * Extensibility:
- *  - Add background permission check (`requestBackgroundPermissionsAsync`) when
- *    background location sync needs always-on permission.
- *  - Debounce the AppState listener if rapid toggling causes performance issues.
- */
-export function useLocationPermission(): LocationPermissionState {
-  const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
-  const [gpsEnabled, setGpsEnabled] = useState<boolean | null>(null);
-  const [isChecking, setIsChecking] = useState(true);
-
-  // Prevent state updates after unmount
-  const mountedRef = useRef(true);
-
-  const check = useCallback(async () => {
+  // Fire the native OS dialog and update status based on the response.
+  const ask = async () => {
+    if (isAsking.current) return;
+    isAsking.current = true;
     try {
-      const [{ status }, gps] = await Promise.all([
-        Location.getForegroundPermissionsAsync(),
-        Location.hasServicesEnabledAsync(),
-      ]);
-
-      if (!mountedRef.current) return;
-      setPermissionGranted(status === 'granted');
-      setGpsEnabled(gps);
+      const { status: s, canAskAgain } = await Location.requestForegroundPermissionsAsync();
+      if (!isMounted.current) return;
+      if (s === 'granted') setStatus('granted');
+      else if (!canAskAgain) setStatus('blocked');
+      else setStatus('denied');
     } catch {
-      // Fail open — don't block the app on a check error
-      if (mountedRef.current) {
-        setPermissionGranted(false);
-        setGpsEnabled(false);
-      }
+      if (isMounted.current) setStatus('denied');
     } finally {
-      if (mountedRef.current) setIsChecking(false);
+      isAsking.current = false;
     }
-  }, []);
+  };
+
+  // Silent status check — does NOT show a dialog.
+  const recheck = async () => {
+    try {
+      const { status: s, canAskAgain } = await Location.getForegroundPermissionsAsync();
+      if (!isMounted.current) return;
+      if (s === 'granted') setStatus('granted');
+      else if (!canAskAgain) setStatus('blocked');
+      else setStatus('denied');
+    } catch {
+      if (isMounted.current) setStatus('denied');
+    }
+  };
 
   useEffect(() => {
-    mountedRef.current = true;
-    check();
+    isMounted.current = true;
 
-    // Re-check whenever app comes back to foreground (e.g. returning from Settings)
-    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
-      if (state === 'active') {
-        check();
+    const init = async () => {
+      const { status: s } = await Location.getForegroundPermissionsAsync().catch(() => ({
+        status: 'denied' as const,
+        canAskAgain: true,
+        expires: 'never' as const,
+        granted: false,
+      }));
+
+      if (!isMounted.current) return;
+
+      if (s === 'granted') {
+        // Already granted (e.g. app re-opened) — no dialog needed.
+        setStatus('granted');
+      } else {
+        // First launch or status unknown — fire the native dialog immediately.
+        await ask();
       }
+    };
+
+    init();
+
+    // When the user returns from the OS Settings app, silently re-check.
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') recheck();
     });
 
     return () => {
-      mountedRef.current = false;
+      isMounted.current = false;
       sub.remove();
     };
-  }, [check]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  return { permissionGranted, gpsEnabled, isChecking, recheck: check };
+  return { status, ask, recheck };
 }
