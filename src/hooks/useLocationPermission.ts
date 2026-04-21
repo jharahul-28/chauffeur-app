@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import * as Location from 'expo-location';
 import { AppState, AppStateStatus } from 'react-native';
 
-export type LocationStatus = 'loading' | 'granted' | 'denied' | 'blocked';
+export type LocationStatus = 'loading' | 'granted' | 'denied';
 
 export interface UseLocationPermissionReturn {
   status: LocationStatus;
@@ -20,10 +20,9 @@ export function useLocationPermission(): UseLocationPermissionReturn {
     if (isAsking.current) return;
     isAsking.current = true;
     try {
-      const { status: s, canAskAgain } = await Location.requestForegroundPermissionsAsync();
+      const { status: s } = await Location.requestForegroundPermissionsAsync();
       if (!isMounted.current) return;
       if (s === 'granted') setStatus('granted');
-      else if (!canAskAgain) setStatus('blocked');
       else setStatus('denied');
     } catch {
       if (isMounted.current) setStatus('denied');
@@ -35,10 +34,9 @@ export function useLocationPermission(): UseLocationPermissionReturn {
   // Silent status check — does NOT show a dialog.
   const recheck = async () => {
     try {
-      const { status: s, canAskAgain } = await Location.getForegroundPermissionsAsync();
+      const { status: s } = await Location.getForegroundPermissionsAsync();
       if (!isMounted.current) return;
       if (s === 'granted') setStatus('granted');
-      else if (!canAskAgain) setStatus('blocked');
       else setStatus('denied');
     } catch {
       if (isMounted.current) setStatus('denied');
