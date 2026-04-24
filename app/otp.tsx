@@ -12,7 +12,7 @@ import {
     Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
+// import { LinearGradient } from 'expo-linear-gradient';
 import Svg, {
     Defs,
     LinearGradient as SvgGradient,
@@ -22,6 +22,8 @@ import Svg, {
 import { bgColors } from '@/src/constants/colors';
 import OtpInput from '@/src/components/OtpInput';
 import { generateOtp, verifyOtp } from '@/src/services/authService';
+import GradientButton from '@/src/components/GradientButton';
+import { BlurView } from 'expo-blur';
 
 export default function OtpScreen() {
     const { countryCode, phone } = useLocalSearchParams<{
@@ -132,28 +134,12 @@ export default function OtpScreen() {
                     </Text>
                 </View>
 
-                {/* Login Button */}
-                <Pressable
-                    disabled={!isComplete || loading}
+                <GradientButton
+                    title="Login"
+                    loading={loading}
+                    disabled={!isComplete}
                     onPress={handleLogin}
-                    style={{ width: '100%' }}
-                >
-                    <LinearGradient
-                        colors={['#E5B566', '#B5783C']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={[
-                            styles.loginButton,
-                            (!isComplete || loading) && styles.loginDisabled,
-                        ]}
-                    >
-                        {loading ? (
-                            <ActivityIndicator color="#000" />
-                        ) : (
-                            <Text style={styles.loginButtonText}>Login</Text>
-                        )}
-                    </LinearGradient>
-                </Pressable>
+                />
             </ScrollView>
         </KeyboardAvoidingView>
     );

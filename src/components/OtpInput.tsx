@@ -41,7 +41,7 @@ export default function OtpInput({ value, onChange, firstInputRef }: OtpInputPro
     return (
         <View style={styles.container}>
             {Array.from({ length: OTP_LENGTH }).map((_, index) => (
-                <BlurView key={index} intensity={40} tint="light" style={styles.box}>
+                <BlurView key={`otp-box-${index}`} intensity={40} tint="light" style={styles.box}>
                     <TextInput
                         ref={(ref) => {
                             inputRefs.current[index] = ref;
@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
         height: 56,
         borderRadius: 10,
         overflow: 'hidden',
-        backgroundColor: 'rgba(255,255,255,0.06)',
+        backgroundColor: 'rgba(255,255,255,0.12)',
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#D69F59',

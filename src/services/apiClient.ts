@@ -22,7 +22,7 @@ export const onUnauthorized = (cb: UnauthorizedListener) => {
 };
 
 const apiClient = axios.create({
-    baseURL: process.env.EXPO_PUBLIC_BASE_URL,
+    baseURL: 'https://stage-api.velvetexperience.com',
     headers: {
         "Content-Type": "application/json",
     },
