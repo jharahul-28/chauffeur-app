@@ -14,49 +14,29 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ExtraCharge, ChargeType } from '../types/charge';
+import { Charge, ChargeType, CHARGE_DISPLAY_NAME } from '../types/charge';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CHARGE_TYPES: ChargeType[] = ['MCD', 'Toll', 'Parking'];
+const CHARGE_TYPES: ChargeType[] = ['MC_FARE', 'TOLL_CHARGE', 'PARKING_CHARGE'];
 
 const CHARGE_TYPE_ICONS: Record<ChargeType, React.ComponentProps<typeof Ionicons>['name']> = {
-  MCD: 'business-outline',
-  Toll: 'car-outline',
-  Parking: 'map-outline',
+  MC_FARE: 'business-outline',
+  TOLL_CHARGE: 'car-outline',
+  PARKING_CHARGE: 'map-outline',
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ChargeModalProps {
   visible: boolean;
-  onSubmit: (charge: ExtraCharge) => void;
+  onSubmit: (charge: Charge) => void;
   onDismiss: () => void;
-  /**
-   * When provided, the modal opens in EDIT mode:
-   *  - Amount and type are pre-filled from this charge.
-   *  - Title and submit label change to reflect "Edit".
-   *  - onSubmit replaces the existing charge instead of appending.
-   */
-  initialCharge?: ExtraCharge;
+  initialCharge?: Charge;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-/**
- * Modal for adding OR editing an extra charge (MCD / Toll / Parking).
- *
- * ADD mode  (initialCharge = undefined): blank form, "Add Extra Charge" title.
- * EDIT mode (initialCharge = ExtraCharge): pre-filled form, "Edit Extra Charge" title.
- *
- * The parent is responsible for deciding whether to append or replace in the
- * ride store — this component only emits the final ExtraCharge value.
- *
- * Extensibility:
- *  - Replace hardcoded types with a dynamic list from a pricing-rules API.
- *  - Add an optional `note` field for free-text driver descriptions.
- *  - Support multiple charge submissions by keeping the modal open after submit.
- */
 const ChargeModal = memo(function ChargeModal({
   visible,
   onSubmit,
@@ -69,7 +49,6 @@ const ChargeModal = memo(function ChargeModal({
   const [amountText, setAmountText] = useState('');
   const [selectedType, setSelectedType] = useState<ChargeType | null>(null);
 
-  // Sync form state whenever the modal opens (covers both add and edit mode)
   useEffect(() => {
     if (visible) {
       if (initialCharge) {
@@ -105,8 +84,9 @@ const ChargeModal = memo(function ChargeModal({
     onDismiss();
   }, [onDismiss]);
 
+  const selectedDisplayName = selectedType ? CHARGE_DISPLAY_NAME[selectedType] : '';
   const submitLabel = canSubmit
-    ? `${isEditMode ? 'Update' : 'Add'} ₹${parsedAmount.toLocaleString('en-IN')} · ${selectedType}`
+    ? `${isEditMode ? 'Update' : 'Add'} ₹${parsedAmount.toLocaleString('en-IN')} · ${selectedDisplayName}`
     : 'Enter amount & select type';
 
   return (
@@ -117,7 +97,6 @@ const ChargeModal = memo(function ChargeModal({
       statusBarTranslucent
       onRequestClose={handleDismiss}
     >
-      {/* Blurred backdrop — tap to dismiss */}
       <TouchableWithoutFeedback onPress={handleDismiss}>
         <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
       </TouchableWithoutFeedback>
@@ -128,12 +107,10 @@ const ChargeModal = memo(function ChargeModal({
         pointerEvents="box-none"
       >
         <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 24) }]}>
-          {/* Handle */}
           <View style={styles.header}>
             <View style={styles.handle} />
           </View>
 
-          {/* Title row */}
           <View style={styles.titleRow}>
             <View style={styles.titleIconWrapper}>
               <Ionicons
@@ -154,7 +131,6 @@ const ChargeModal = memo(function ChargeModal({
             </View>
           </View>
 
-          {/* Amount input */}
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>CHARGE AMOUNT (₹)</Text>
             <View style={[styles.inputWrapper, isAmountValid && styles.inputWrapperValid]}>
@@ -173,7 +149,6 @@ const ChargeModal = memo(function ChargeModal({
             </View>
           </View>
 
-          {/* Charge type chips */}
           <View style={styles.typeSection}>
             <Text style={[styles.inputLabel, !isAmountValid && styles.labelDisabled]}>
               CHARGE TYPE
@@ -207,7 +182,7 @@ const ChargeModal = memo(function ChargeModal({
                         !isEnabled && styles.typeChipLabelDisabled,
                       ]}
                     >
-                      {type}
+                      {CHARGE_DISPLAY_NAME[type]}
                     </Text>
                   </Pressable>
                 );
@@ -215,7 +190,6 @@ const ChargeModal = memo(function ChargeModal({
             </View>
           </View>
 
-          {/* Submit */}
           <Pressable
             style={[styles.submitWrapper, !canSubmit && styles.submitWrapperDisabled]}
             onPress={handleSubmit}

@@ -4,13 +4,16 @@
 export type WaypointType = 'PICKUP' | 'STOP' | 'DROP';
 
 export interface Waypoint {
-  id: number;
-  waypointSequence: number;
-  waypointType: WaypointType;
+  id?: number;
+  waypointSequence?: number;
+  /** Some API versions return `type` instead of `waypointType` */
+  waypointType?: WaypointType;
+  type?: WaypointType;
   latitude: number;
   longitude: number;
   address: string;
-  arrivedAt: string | null;
+  arrivedAt?: string | null;
+  status?: string;
 }
 
 export interface BookingDetailResponse {

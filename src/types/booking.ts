@@ -11,57 +11,135 @@ export type BookingStatus =
   | 'WAITING'
   | 'COMPLETED';
 
-// ─── Raw shape returned by GET /chauffeur/:id/bookings ────────────────────────
-export interface ApiBooking {
-  /** Booking-vehicle assignment ID — used for chauffeur action endpoints (/chauffeur/:id/...). */
+// ─── Waypoint inside booking.waypoints ───────────────────────────────────────
+// NOTE: real API uses `type` (not `waypointType`), and no id/sequence/arrivedAt
+export interface ApiWaypoint {
+  type: 'PICKUP' | 'STOP' | 'DROP';
+  latitude: number;
+  longitude: number;
+  address: string;
+  status?: string;
+  // Optional — present on detail endpoint but not on list endpoint
+  id?: number;
+  waypointSequence?: number;
+  arrivedAt?: string | null;
+}
+
+// ─── Special request shape (rich — includes passengers, luggage, etc.) ────────
+export interface ApiSpecialRequest {
+  beverages?: string[];
+  other?: string;
+  vehicleCategory?: string;
+  numberOfVehicles?: number;
+  passengers?: {
+    adults?: number;
+    children?: number;
+  };
+  luggage?: {
+    small?: number;
+    medium?: number;
+    large?: number;
+  };
+}
+
+// ─── Top-level metadata ───────────────────────────────────────────────────────
+export interface ApiBookingMetadata {
+  categoryName?: string;
+  chauffeurName?: string;
+  chauffeurContact?: string;
+  vehicleBrand?: string;
+  vehicleModel?: string;
+  customerName?: string;
+  customerPhone?: string;
+  customerContact?: string;
+  pickupAddress?: string;
+  bookingReference?: string;
+  specialRequest?: ApiSpecialRequest;
+  specialRemarks?: string;
+  // Waiting config
+  totalWaitingSeconds?: number;
+  waitingFreeMinutes?: number;
+  waitingChargeableIntervalMinutes?: number;
+  waitingChargePerInterval?: number;
+}
+
+// ─── Nested booking object ────────────────────────────────────────────────────
+export interface ApiNestedBooking {
   id: number;
-  /** Actual booking ID — used for the booking detail endpoint (GET /bookings/:bookingId). */
-  bookingId: number;
-  vehicleCategoryId: number;
-  vehicleId: number;
-  chauffeurId: number;
-  vehicleNumber: string;
+  bookingReference?: string;
+  bookingConfirmationDate?: string;
+  status?: string;
+  customerId?: number | null;
+  metadata?: {
+    customerName?: string;
+    customerContact?: string;
+    customerType?: string;
+  };
+  rideDate?: string | null;
+  pickupTime?: string | null;
+  bookingSource?: string;
+  tripType?: string;
+  kmRide?: number | null;
+  estimatedFare?: number | null;
+  actualFare?: number | null;
+  totalAdditionalChargesOfVehicles?: number | null;
+  totalFare?: number | null;
+  advanceAmount?: number | null;
+  balanceAmount?: number | null;
+  paymentMode?: string | null;
+  paymentStatus: string | null;
+  specialRequest?: ApiSpecialRequest;
+  waypoints: ApiWaypoint[];
+  vehicles?: unknown[];
+}
+
+// ─── Raw shape returned by GET /chauffeur/:id/bookings ────────────────────────
+export interface ApiBookingVehicle {
+  /** bookingVehicleId — path param for all /chauffeur/{id}/... endpoints */
+  id: number;
+  bookingId?: number;
+  vehicleCategoryId?: number;
+  vehicleId?: number;
+  chauffeurId?: number;
+  vehicleNumber?: string;
   /** ISO date string "YYYY-MM-DD", null when not yet scheduled */
   rideDate: string | null;
   /** Time string "HH:mm:ss", null when not yet scheduled */
   pickupTime: string | null;
   status: BookingStatus;
-  metadata: {
-    categoryName: string;
-    chauffeurName: string;
-    chauffeurContact: string;
-    vehicleBrand: string;
-    vehicleModel: string;
-    /** Customer full name. */
-    customerName?: string;
-    /** Pickup address text. */
-    pickupAddress?: string;
-    /** Booking reference code, e.g. "VLV-20260411-6D9B4". */
-    bookingReference?: string;
-    /** Structured special request from the customer. */
-    specialRequest?: {
-      other?: string;
-      beverages?: string[];
-    };
-    /** Optional driver notes / special instructions from the customer. */
-    specialRemarks?: string;
-  };
+  baseFare?: number;
+  actualFare?: number;
+  advanceAmount?: number;
+  /** Amount the customer owes at trip end */
+  balanceAmount: number;
+  additionalCharges?: unknown[];
+  totalAdditionalAmount?: number;
+  waitingTimeCharge?: number;
+  metadata: ApiBookingMetadata;
+  /** Full nested booking — source for waypoints and paymentStatus */
+  booking: ApiNestedBooking;
 }
 
-// ─── API response envelope (array or wrapped) ─────────────────────────────────
+// ─── API response envelope ────────────────────────────────────────────────────
 export interface ApiBookingsResponse {
-  data?: ApiBooking[];
+  data?: ApiBookingVehicle[];
+}
+
+// ─── Route stop for display ───────────────────────────────────────────────────
+export interface BookingWaypoint {
+  type: 'PICKUP' | 'STOP' | 'DROP';
+  address: string;
+  latitude: number;
+  longitude: number;
 }
 
 // ─── UI model used by all components ─────────────────────────────────────────
 export interface Booking {
-  /** Booking-vehicle assignment ID — forwarded to chauffeur action endpoints. */
+  /** bookingVehicleId — forwarded to all chauffeur action endpoints. */
   id: string;
-  /** Booking ID — used to fetch booking details (GET /bookings/:bookingId). */
+  /** Nested booking id — used for booking detail fetch. */
   bookingId: string;
-  /** e.g. "Velvet Premier" */
   categoryName: string;
-  /** e.g. "Toyota Innova Crysta" */
   vehicleInfo: string;
   vehicleNumber: string;
   /** ISO date string "YYYY-MM-DD", empty string when unscheduled */
@@ -69,26 +147,36 @@ export interface Booking {
   /** Human-readable, e.g. "Today, 9:30 AM" or "TBD" when unscheduled */
   dateTime: string;
   status: BookingStatus;
-  /** Customer full name, e.g. "Deepak Kumar". */
+  /** From booking.paymentStatus */
+  paymentStatus: string | null;
+  /** Amount to collect at trip end */
+  balanceAmount: number;
+  /** Fare amounts */
+  baseFare: number;
+  totalFare: number;
+  // ── From metadata ──
   customerName?: string;
-  /** Pickup address text, e.g. "New Delhi". */
   pickupAddress?: string;
-  /** Free-text special request from the customer (specialRequest.other). */
-  specialRequest?: string;
-  /** Comma-separated beverages list when beverages are requested. */
-  beverages?: string;
-  /** Free-text special instructions from the customer, if any. */
-  specialRemarks?: string;
-  /** Booking reference code, e.g. "VLV-20260411-6D9B4". */
   bookingReference?: string;
-  /** Full ISO datetime "YYYY-MM-DDTHH:mm:ss" used for sort-key precision. Undefined for unscheduled bookings. */
+  specialRemarks?: string;
+  // ── Special request (flat) ──
+  beverages?: string;
+  specialRequest?: string;
+  // ── Rich special request fields ──
+  passengers?: { adults: number; children: number };
+  luggage?: { small: number; medium: number; large: number };
+  // ── Trip info ──
+  tripType?: string;
+  kmRide?: number | null;
+  /** Ordered route waypoints for display (pickup → stops → drop) */
+  waypoints: BookingWaypoint[];
+  /** Full ISO datetime "YYYY-MM-DDTHH:mm:ss" used for sort-key precision. */
   rideDateTime?: string;
 }
 
 // ─── Mapper ───────────────────────────────────────────────────────────────────
 
 function formatDateTime(rideDate: string, pickupTime: string): string {
-  // rideDate: "2026-04-05", pickupTime: "09:30:00"
   const date = new Date(`${rideDate}T${pickupTime}`);
 
   const today = new Date();
@@ -123,28 +211,73 @@ function formatDateTime(rideDate: string, pickupTime: string): string {
   });
 }
 
-export function mapApiBooking(raw: ApiBooking): Booking {
+function sortWaypoints(wps: ApiWaypoint[]): ApiWaypoint[] {
+  const ORDER: Record<string, number> = { PICKUP: 0, STOP: 1, DROP: 2 };
+  return [...wps].sort((a, b) => {
+    const seqA = a.waypointSequence ?? ORDER[a.type] ?? 99;
+    const seqB = b.waypointSequence ?? ORDER[b.type] ?? 99;
+    return seqA - seqB;
+  });
+}
+
+export function mapApiBookingVehicle(raw: ApiBookingVehicle): Booking {
   const hasSchedule = !!raw.rideDate && !!raw.pickupTime;
-  const beverageList = raw.metadata.specialRequest?.beverages;
+  const meta = raw.metadata ?? {};
+  const booking = raw.booking ?? { id: 0, waypoints: [], paymentStatus: null };
+
+  // Special request — prefer metadata over booking-level (metadata is richer)
+  const sr = meta.specialRequest ?? booking.specialRequest;
+  const beverageList = sr?.beverages ?? [];
+
+  // Waypoints sorted for display
+  const rawWaypoints: ApiWaypoint[] = booking.waypoints ?? [];
+  const sortedWaypoints = sortWaypoints(rawWaypoints);
+  const waypoints: BookingWaypoint[] = sortedWaypoints
+    .filter((w) => typeof w.latitude === 'number' && typeof w.longitude === 'number')
+    .map((w) => ({
+      type: w.type,
+      address: w.address,
+      latitude: w.latitude,
+      longitude: w.longitude,
+    }));
+
+  const passengers = sr?.passengers
+    ? { adults: sr.passengers.adults ?? 0, children: sr.passengers.children ?? 0 }
+    : undefined;
+
+  const luggage = sr?.luggage
+    ? { small: sr.luggage.small ?? 0, medium: sr.luggage.medium ?? 0, large: sr.luggage.large ?? 0 }
+    : undefined;
 
   return {
     id: String(raw.id),
-    bookingId: String(raw.bookingId),
-    categoryName: raw.metadata.categoryName,
-    vehicleInfo: `${raw.metadata.vehicleBrand} ${raw.metadata.vehicleModel}`,
-    vehicleNumber: raw.vehicleNumber,
+    bookingId: String(booking.id),
+    categoryName: meta.categoryName ?? '',
+    vehicleInfo: meta.vehicleBrand && meta.vehicleModel
+      ? `${meta.vehicleBrand} ${meta.vehicleModel}`
+      : '',
+    vehicleNumber: raw.vehicleNumber ?? '',
     date: raw.rideDate ?? '',
     dateTime: hasSchedule ? formatDateTime(raw.rideDate!, raw.pickupTime!) : 'TBD',
     status: raw.status,
-    customerName: raw.metadata.customerName || undefined,
-    pickupAddress: raw.metadata.pickupAddress || undefined,
-    specialRequest: raw.metadata.specialRequest?.other || undefined,
-    beverages:
-      beverageList && beverageList.length > 0
-        ? beverageList.join(', ')
-        : undefined,
-    specialRemarks: raw.metadata.specialRemarks || undefined,
-    bookingReference: raw.metadata.bookingReference || undefined,
+    paymentStatus: booking.paymentStatus ?? null,
+    balanceAmount: raw.balanceAmount ?? 0,
+    baseFare: raw.baseFare ?? 0,
+    totalFare: booking.totalFare ?? raw.actualFare ?? 0,
+    customerName: meta.customerName || undefined,
+    pickupAddress: meta.pickupAddress || undefined,
+    bookingReference: meta.bookingReference || booking.bookingReference || undefined,
+    specialRemarks: meta.specialRemarks || undefined,
+    beverages: beverageList.length > 0 ? beverageList.join(', ') : undefined,
+    specialRequest: sr?.other || undefined,
+    passengers,
+    luggage,
+    tripType: booking.tripType || undefined,
+    kmRide: booking.kmRide ?? null,
+    waypoints,
     rideDateTime: hasSchedule ? `${raw.rideDate}T${raw.pickupTime}` : undefined,
   };
 }
+
+/** @deprecated Use mapApiBookingVehicle */
+export const mapApiBooking = mapApiBookingVehicle as unknown as (raw: ApiBookingVehicle) => Booking;

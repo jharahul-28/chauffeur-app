@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getCurrentLocation } from '../services/locationService';
-import { updateDriverLocation } from '../services/rideService';
+import { updateDriverLocation, NextWaypoint } from '../services/rideService';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -20,6 +20,8 @@ export function useLocationSync(
 ): {
   startSync: () => void;
   stopSync: () => void;
+  /** Most recent next-waypoint from the location-update API. Updates every sync tick. */
+  nextWaypoint: NextWaypoint | null;
 } {
   // Stable refs so the interval closure always reads the latest values
   const bookingVehicleIdRef = useRef(bookingVehicleId);
@@ -27,6 +29,8 @@ export function useLocationSync(
 
   const onArrivedAtPickupRef = useRef(onArrivedAtPickup);
   onArrivedAtPickupRef.current = onArrivedAtPickup;
+
+  const [nextWaypoint, setNextWaypoint] = useState<NextWaypoint | null>(null);
 
   const isRunningRef = useRef(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -49,7 +53,10 @@ export function useLocationSync(
 
     try {
       const response = await updateDriverLocation(bvId, lat, lng);
-      if (response.arrived && response.arrivedWaypointType === 'PICKUP') {
+      if (response.waypoint) {
+        setNextWaypoint(response.waypoint);
+      }
+      if (response.arrived && response.waypoint?.type === 'PICKUP') {
         onArrivedAtPickupRef.current?.();
       }
     } catch (err) {
@@ -78,5 +85,5 @@ export function useLocationSync(
   // Cleanup on unmount regardless of whether stopSync was called explicitly
   useEffect(() => () => stopSync(), [stopSync]);
 
-  return { startSync, stopSync };
+  return { startSync, stopSync, nextWaypoint };
 }

@@ -6,16 +6,18 @@ import {
   Pressable,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ChargeModal from '../../src/components/ChargeModal';
-import { BookingBilling } from '../../src/types/bookingBilling';
-import { ExtraCharge } from '../../src/types/charge';
-import { getBookingDetails, submitCharges } from '../../src/services/bookingApi';
-import { aggregateCharges } from '../../src/utils/chargeAggregator';
+import ChargesSummaryModal from '../../src/components/ChargesSummaryModal';
+import { Charge, CHARGE_DISPLAY_NAME, CHARGE_ORDER } from '../../src/types/charge';
+import { useCharges } from '../../src/hooks/useCharges';
+import { postCompletePayment } from '../../src/services/rideService';
+import { getBookingDetails } from '../../src/services/bookingApi';
 
 // ─── Screen params ────────────────────────────────────────────────────────────
 
@@ -26,6 +28,7 @@ interface PendingAmountParams {
   pickupText?: string;
   destinationText?: string;
   fare?: string;
+  balanceAmount?: string;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -34,62 +37,114 @@ export default function PendingAmountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const {
-    rideId,
     bookingVehicleId,
     riderName = 'Rider',
     pickupText = '—',
     destinationText = '—',
-    fare = '—',
+    balanceAmount: balanceAmountParam = '',
   } = useLocalSearchParams<PendingAmountParams>();
 
-  // ── Billing state ─────────────────────────────────────────────────────────
-  const [billing, setBilling] = useState<BookingBilling | null>(null);
-  const [fetchError, setFetchError] = useState(false);
+  // Initialise from nav param; gets refreshed after each successful charge save
+  const [balanceAmount, setBalanceAmount] = useState<number | null>(
+    balanceAmountParam ? parseFloat(balanceAmountParam) : null,
+  );
+
+  // ── Payment state ─────────────────────────────────────────────────────────
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
 
   // ── Charge modal state ────────────────────────────────────────────────────
+  const [chargesSummaryVisible, setChargesSummaryVisible] = useState(false);
   const [chargeModalVisible, setChargeModalVisible] = useState(false);
-  const [localCharges, setLocalCharges] = useState<ExtraCharge[]>([]);
+  const [editingChargeIndex, setEditingChargeIndex] = useState<number | null>(null);
 
-  const fetchBilling = useCallback(async () => {
+  const { charges, fetchCharges, saveCharges } = useCharges(bookingVehicleId);
+
+  const refreshBilling = useCallback(async () => {
     if (!bookingVehicleId) return;
-    setFetchError(false);
     try {
-      const data = await getBookingDetails(bookingVehicleId);
-      setBilling(data);
-    } catch (err) {
-      console.error('[pending-amount] getBookingDetails failed:', err);
-      setFetchError(true);
+      const billing = await getBookingDetails(bookingVehicleId);
+      setBalanceAmount(billing.balanceAmount);
+    } catch {
+      // balance display stays as-is; non-critical
     }
   }, [bookingVehicleId]);
 
   useEffect(() => {
-    fetchBilling();
+    fetchCharges();
+    refreshBilling();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Charge save handler ───────────────────────────────────────────────────
-  const handleChargeSubmit = useCallback(async (charge: ExtraCharge) => {
-    const updated = [...localCharges, charge];
-    setLocalCharges(updated);
+  // ── Charge management ─────────────────────────────────────────────────────
+
+  const handleOpenAddCharge = useCallback(() => {
+    setChargesSummaryVisible(false);
+    setEditingChargeIndex(null);
+    setChargeModalVisible(true);
+  }, []);
+
+  const handleOpenEditCharge = useCallback((index: number) => {
+    setChargesSummaryVisible(false);
+    setEditingChargeIndex(index);
+    setChargeModalVisible(true);
+  }, []);
+
+  const handleChargeSubmit = useCallback(async (charge: Charge) => {
+    const updatedCharges = editingChargeIndex !== null
+      ? charges.map((c, i) => (i === editingChargeIndex ? charge : c))
+      : [...charges, charge];
+
     setChargeModalVisible(false);
+    setEditingChargeIndex(null);
 
-    if (!bookingVehicleId) return;
+    const saved = await saveCharges(updatedCharges);
+    if (saved) refreshBilling();
+  }, [editingChargeIndex, charges, saveCharges, refreshBilling]);
+
+  const chargeBeingEdited = editingChargeIndex !== null ? charges[editingChargeIndex] : undefined;
+
+  const groupedCharges = CHARGE_ORDER
+    .map((type) => ({
+      type,
+      displayName: CHARGE_DISPLAY_NAME[type],
+      entries: charges.filter((c) => c.type === type),
+    }))
+    .filter((g) => g.entries.length > 0);
+
+  const totalExtraCharges = charges.reduce((sum, c) => sum + c.amount, 0);
+
+  // ── Payment handlers ──────────────────────────────────────────────────────
+
+  const handlePayment = useCallback(async (paid: boolean) => {
+    if (!bookingVehicleId || isSubmittingPayment) return;
+
+    setIsSubmittingPayment(true);
     try {
-      await submitCharges(bookingVehicleId, aggregateCharges(updated));
-      await fetchBilling();
+      if (paid) {
+        const amount = balanceAmount ?? 0;
+        await postCompletePayment(bookingVehicleId, { paymentStatus: 'PAID', amount });
+      } else {
+        await postCompletePayment(bookingVehicleId, { paymentStatus: 'UNPAID' });
+      }
+      router.replace('/(driver)/(tabs)/bookings');
     } catch (err) {
-      console.error('[pending-amount] submitCharges failed:', err);
-      Alert.alert('Warning', 'Charge saved locally but failed to sync with server.');
+      console.error('[pending-amount] completePayment failed:', err);
+      Alert.alert('Payment Error', 'Failed to record payment. Please try again.');
+    } finally {
+      setIsSubmittingPayment(false);
     }
-  }, [localCharges, bookingVehicleId, fetchBilling]);
+  }, [bookingVehicleId, isSubmittingPayment, balanceAmount, router]);
 
-  const handleContinue = useCallback(() => {
-    router.replace({
-      pathname: '/(driver)/feedback',
-      params: { rideId, riderName },
-    });
-  }, [router, rideId, riderName]);
-
-  const displayAmount = billing?.balanceAmount ?? null;
+  const handlePaid = useCallback(() => handlePayment(true), [handlePayment]);
+  const handleUnpaid = useCallback(() => {
+    Alert.alert(
+      'Mark as Unpaid?',
+      'This will record the trip as unpaid. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', style: 'destructive', onPress: () => handlePayment(false) },
+      ],
+    );
+  }, [handlePayment]);
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -106,18 +161,17 @@ export default function PendingAmountScreen() {
           <Text style={styles.subtitle}>Please collect payment from the customer</Text>
         </View>
 
-        {/* ── Amount + Extra Charges card ───────────────────────────────────── */}
+        {/* ── Amount card ───────────────────────────────────────────────────── */}
         <View style={styles.amountCard}>
-          {/* Amount row */}
           <View style={styles.amountRow}>
             <View style={styles.amountLeft}>
               <Ionicons name="wallet-outline" size={18} color="#EDB96D" />
               <Text style={styles.amountLabel}>Amount to be Paid</Text>
             </View>
 
-            {displayAmount !== null ? (
+            {balanceAmount !== null && !isNaN(balanceAmount) ? (
               <Text style={styles.amountValue}>
-                ₹{displayAmount.toLocaleString('en-IN', {
+                ₹{balanceAmount.toLocaleString('en-IN', {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
                 })}
@@ -127,36 +181,53 @@ export default function PendingAmountScreen() {
             )}
           </View>
 
-          {/* Billing fetch error */}
-          {fetchError && !loading && (
-            <View style={styles.billingErrorRow}>
-              <Text style={styles.billingErrorText}>Could not load amount.</Text>
-              <Pressable onPress={fetchBilling} style={styles.retryBtn}>
-                <Text style={styles.retryBtnText}>Retry</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {/* Divider */}
           <View style={styles.divider} />
 
           {/* Extra Charges button */}
           <Pressable
             style={styles.extraChargesBtn}
-            onPress={() => setChargeModalVisible(true)}
+            onPress={() => setChargesSummaryVisible(true)}
           >
             <View style={styles.extraChargesBtnLeft}>
               <Ionicons name="receipt-outline" size={16} color="#EDB96D" />
               <Text style={styles.extraChargesBtnText}>Extra Charges</Text>
-              {localCharges.length > 0 && (
+              {charges.length > 0 && (
                 <View style={styles.extraChargesBadge}>
-                  <Text style={styles.extraChargesBadgeText}>{localCharges.length}</Text>
+                  <Text style={styles.extraChargesBadgeText}>{charges.length}</Text>
                 </View>
               )}
             </View>
             <Ionicons name="chevron-forward" size={16} color="#8E8E93" />
           </Pressable>
         </View>
+
+        {/* ── Charges breakdown ─────────────────────────────────────────────── */}
+        {groupedCharges.length > 0 && (
+          <View style={styles.chargesCard}>
+            <Text style={styles.chargesCardTitle}>Extra Charges Breakdown</Text>
+
+            {groupedCharges.map(({ type, displayName, entries }) => (
+              <View key={type} style={styles.chargeGroup}>
+                <Text style={styles.chargeGroupLabel}>{displayName}</Text>
+                {entries.map((charge, i) => (
+                  <View key={i} style={styles.chargeEntryRow}>
+                    <View style={styles.chargeDot} />
+                    <Text style={styles.chargeEntryAmount}>
+                      ₹{charge.amount.toLocaleString('en-IN')}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ))}
+
+            <View style={styles.chargesTotalRow}>
+              <Text style={styles.chargesTotalLabel}>Total Extra</Text>
+              <Text style={styles.chargesTotalValue}>
+                ₹{totalExtraCharges.toLocaleString('en-IN')}
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* ── Trip summary ──────────────────────────────────────────────────── */}
         <View style={styles.summaryCard}>
@@ -177,25 +248,63 @@ export default function PendingAmountScreen() {
           </View>
         </View>
 
-        {/* ── Continue CTA ──────────────────────────────────────────────────── */}
-        <Pressable onPress={handleContinue} style={styles.ctaWrapper}>
-          <LinearGradient
-            colors={['#E5B566', '#B5783C']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.ctaButton}
+        {/* ── Payment CTAs ───────────────────────────────────────────────────── */}
+        <View style={styles.paymentRow}>
+          {/* Paid */}
+          <Pressable
+            onPress={handlePaid}
+            disabled={isSubmittingPayment}
+            style={[styles.paymentBtnWrapper, styles.paymentBtnFlex]}
           >
-            <Text style={styles.ctaText}>Continue to Feedback</Text>
-            <Ionicons name="arrow-forward" size={18} color="#000" />
-          </LinearGradient>
-        </Pressable>
+            <LinearGradient
+              colors={isSubmittingPayment ? ['#2C2C2E', '#2C2C2E'] : ['#E5B566', '#B5783C']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.paymentBtn}
+            >
+              {isSubmittingPayment ? (
+                <ActivityIndicator size="small" color="#8E8E93" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle-outline" size={18} color="#000" />
+                  <Text style={styles.paidBtnText}>Paid</Text>
+                </>
+              )}
+            </LinearGradient>
+          </Pressable>
+
+          {/* Unpaid */}
+          <Pressable
+            onPress={handleUnpaid}
+            disabled={isSubmittingPayment}
+            style={[styles.paymentBtnWrapper, styles.paymentBtnFlex]}
+          >
+            <View style={[styles.paymentBtn, styles.unpaidBtn, isSubmittingPayment && styles.btnDisabled]}>
+              <Ionicons name="close-circle-outline" size={18} color={isSubmittingPayment ? '#3A3A3C' : '#FF453A'} />
+              <Text style={[styles.unpaidBtnText, isSubmittingPayment && styles.textDisabled]}>Unpaid</Text>
+            </View>
+          </Pressable>
+        </View>
       </ScrollView>
+
+      {/* ── Charges Summary Modal ──────────────────────────────────────────── */}
+      <ChargesSummaryModal
+        visible={chargesSummaryVisible}
+        charges={charges}
+        onDismiss={() => setChargesSummaryVisible(false)}
+        onAddCharge={handleOpenAddCharge}
+        onEditCharge={handleOpenEditCharge}
+      />
 
       {/* ── Charge Modal ───────────────────────────────────────────────────── */}
       <ChargeModal
         visible={chargeModalVisible}
         onSubmit={handleChargeSubmit}
-        onDismiss={() => setChargeModalVisible(false)}
+        onDismiss={() => {
+          setChargeModalVisible(false);
+          setEditingChargeIndex(null);
+        }}
+        initialCharge={chargeBeingEdited}
       />
     </View>
   );
@@ -243,7 +352,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Amount + Extra Charges card
+  // Amount card
   amountCard: {
     backgroundColor: '#1C1C1E',
     borderRadius: 18,
@@ -275,31 +384,6 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     fontSize: 18,
     fontWeight: '500',
-  },
-  billingErrorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-  billingErrorText: {
-    color: '#FF453A',
-    fontSize: 13,
-    fontWeight: '500',
-    flex: 1,
-  },
-  retryBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 10,
-    backgroundColor: 'rgba(237, 185, 109, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(237, 185, 109, 0.3)',
-  },
-  retryBtnText: {
-    color: '#EDB96D',
-    fontSize: 13,
-    fontWeight: '600',
   },
   divider: {
     height: 1,
@@ -333,6 +417,66 @@ const styles = StyleSheet.create({
   extraChargesBadgeText: {
     color: '#000',
     fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Charges breakdown card
+  chargesCard: {
+    backgroundColor: '#1C1C1E',
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 16,
+    gap: 14,
+  },
+  chargesCardTitle: {
+    color: '#8E8E93',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  chargeGroup: {
+    gap: 6,
+  },
+  chargeGroupLabel: {
+    color: '#EDB96D',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  chargeEntryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingLeft: 4,
+  },
+  chargeDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#3A3A3C',
+  },
+  chargeEntryAmount: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  chargesTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#2C2C2E',
+  },
+  chargesTotalLabel: {
+    color: '#8E8E93',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  chargesTotalValue: {
+    color: '#FF9F0A',
+    fontSize: 16,
     fontWeight: '700',
   },
 
@@ -388,22 +532,47 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // CTA
-  ctaWrapper: {
-    width: '100%',
+  // Payment buttons
+  paymentRow: {
+    flexDirection: 'row',
+    gap: 12,
   },
-  ctaButton: {
+  paymentBtnWrapper: {
+    overflow: 'hidden',
+    borderRadius: 16,
+  },
+  paymentBtnFlex: {
+    flex: 1,
+  },
+  paymentBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 8,
     paddingVertical: 17,
     borderRadius: 16,
   },
-  ctaText: {
+  paidBtnText: {
     color: '#000',
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
+  },
+  unpaidBtn: {
+    backgroundColor: 'rgba(255, 69, 58, 0.1)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 69, 58, 0.35)',
+  },
+  unpaidBtnText: {
+    color: '#FF453A',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  btnDisabled: {
+    opacity: 0.4,
+  },
+  textDisabled: {
+    color: '#3A3A3C',
   },
 });

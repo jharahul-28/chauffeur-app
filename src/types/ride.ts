@@ -1,4 +1,5 @@
 import { Coordinate } from '../components/MapViewContainer';
+import { RawWaypoint } from '../utils/waypointUtils';
 
 // ─── Ride Status Machine ───────────────────────────────────────────────────────
 
@@ -56,6 +57,8 @@ export interface ActiveRide {
   fare: string;
   /** Raw fare number for calculations. */
   totalFare: number;
+  /** Amount the customer owes at trip end (from bookingVehicle.balanceAmount). */
+  balanceAmount: number;
   /** Optional free-text instructions from the customer for this ride. */
   specialRemarks?: string;
   /** Structured beverage + other special request from the customer. */
@@ -63,4 +66,9 @@ export interface ActiveRide {
     beverages?: string[];
     other?: string;
   };
+  /**
+   * Raw waypoints from the booking detail API, in original API order.
+   * Consumed by useRoutePoints() in driver-home to drive map routing.
+   */
+  rawWaypoints: RawWaypoint[];
 }

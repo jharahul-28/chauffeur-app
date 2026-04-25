@@ -13,8 +13,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-import MapViewContainer, { Coordinate } from '../../src/components/MapViewContainer';
+import MapViewContainer from '../../src/components/MapViewContainer';
 import RideInfoPanel from '../../src/components/RideInfoPanel';
+import { useRoutePoints } from '../../src/utils/waypointUtils';
 import PickupDrawer from '../../src/components/PickupDrawer';
 import OTPModal from '../../src/components/OTPModal';
 import ChargeModal from '../../src/components/ChargeModal';
@@ -24,10 +25,11 @@ import { useLocationSync } from '../../src/hooks/useLocationSync';
 import { RouteInfo } from '../../src/components/DrivingRoute';
 import { formatEta, formatDistance } from '../../src/utils/routeUtils';
 import { useRideStore } from '../../src/state/useRideStore';
+import { useCharges } from '../../src/hooks/useCharges';
 import { useWaitTimer } from '../../src/hooks/useWaitTimer';
 import { useBookingDetail } from '../../src/hooks/useBookingDetail';
 import { logWaitEvent } from '../../src/utils/waitLogger';
-import { ExtraCharge } from '../../src/types/charge';
+import { Charge } from '../../src/types/charge';
 import { BookingStatus } from '../../src/types/booking';
 import {
   postDriverOnTheWay,
@@ -35,10 +37,8 @@ import {
   postVerifyOtp,
   postWaiting,
   postContinue,
-  postComplete,
+  postEndRide,
 } from '../../src/services/rideService';
-import { submitCharges } from '../../src/services/bookingApi';
-import { aggregateCharges } from '../../src/utils/chargeAggregator';
 
 // ─── Top-bar label per ride status ────────────────────────────────────────────
 
@@ -76,9 +76,6 @@ export default function DriverHomeScreen() {
   // ── Charge modal state ────────────────────────────────────────────────────
   const [chargeModalVisible, setChargeModalVisible] = useState(false);
   const [chargesSummaryVisible, setChargesSummaryVisible] = useState(false);
-  /**
-   * Index into extraCharges[] being edited, or null when adding a new charge.
-   */
   const [editingChargeIndex, setEditingChargeIndex] = useState<number | null>(null);
 
   const [isEndingTrip, setIsEndingTrip] = useState(false);
@@ -91,7 +88,7 @@ export default function DriverHomeScreen() {
   const bookingVehicleId = params.bookingVehicleId as string | undefined;
   const bookingStatus = params.bookingStatus as BookingStatus | undefined;
 
-  const { startSync, stopSync } = useLocationSync(bookingVehicleId);
+  const { startSync, stopSync, nextWaypoint } = useLocationSync(bookingVehicleId);
   const isPickupMode = Boolean(bookingId);
 
   // ── Booking detail fetch ──────────────────────────────────────────────────
@@ -102,15 +99,10 @@ export default function DriverHomeScreen() {
   } = useBookingDetail(bookingId);
 
   // ── Ride state machine ────────────────────────────────────────────────────
-  const {
-    ride,
-    extraCharges,
-    initRide,
-    updateStatus,
-    addExtraCharge,
-    updateExtraCharge,
-    clearRide,
-  } = useRideStore();
+  const { ride, initRide, updateStatus, clearRide } = useRideStore();
+
+  // ── Charges — always sourced from API, never from local state ─────────────
+  const { charges, fetchCharges, saveCharges } = useCharges(bookingVehicleId);
 
   // ── Wait timer ────────────────────────────────────────────────────────────
   const {
@@ -145,10 +137,12 @@ export default function DriverHomeScreen() {
     }
   }, [bookingDetailRide]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Location sync lifecycle — tied exclusively to an active ride.
-  // Starts the moment a ride with a valid bookingVehicleId is in state,
-  // stops automatically when the ride clears (trip end) or the screen unmounts.
-  // This is the ONLY place startSync/stopSync are called.
+  // Fetch charges from API on mount
+  useEffect(() => {
+    if (bookingVehicleId) fetchCharges();
+  }, [bookingVehicleId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Location sync lifecycle
   useEffect(() => {
     if (!ride?.bookingVehicleId) return;
     startSync();
@@ -168,16 +162,12 @@ export default function DriverHomeScreen() {
     setRouteInfo(info);
   }, []);
 
-  // ── Map coordinates ───────────────────────────────────────────────────────
-  const pickupCoordinate: Coordinate | undefined = ride?.pickup ?? undefined;
+  // ── Route points (memoised from raw waypoints) ───────────────────────────
+  const routePoints = useRoutePoints(ride?.rawWaypoints);
 
-  const tripDestination: Coordinate | undefined =
-    ride?.status === 'TRIP_STARTED' ? ride.destination : undefined;
-
-  const tripWaypoints: Coordinate[] | undefined =
-    ride?.status === 'TRIP_STARTED'
-      ? ride.stoppages.map(({ latitude, longitude }) => ({ latitude, longitude }))
-      : undefined;
+  const mapMode = ride
+    ? ride.status === 'TRIP_STARTED' ? 'trip' : 'pickup'
+    : undefined;
 
   // ── Ride state transitions ────────────────────────────────────────────────
 
@@ -227,12 +217,11 @@ export default function DriverHomeScreen() {
             stopWaiting();
 
             try {
-              await postComplete(ride.bookingVehicleId);
+              await postEndRide(ride.bookingVehicleId);
               resetWaitTimer();
               updateStatus('TRIP_COMPLETED');
               clearRide();
 
-              // Navigate to pending amount screen first, then feedback
               router.push({
                 pathname: '/(driver)/pending-amount',
                 params: {
@@ -242,6 +231,7 @@ export default function DriverHomeScreen() {
                   pickupText: ride.pickupText,
                   destinationText: ride.destinationText,
                   fare: ride.fare,
+                  balanceAmount: String(ride.balanceAmount ?? ''),
                 },
               });
             } catch (err) {
@@ -324,31 +314,19 @@ export default function DriverHomeScreen() {
   }, []);
 
   /**
-   * Called when ChargeModal saves — updates local state then immediately
-   * submits the full charges snapshot to the backend.
+   * Build the updated charges array, then PUT to backend and re-fetch.
+   * UI state is only updated after API confirmation.
    */
-  const handleChargeSubmit = useCallback(async (charge: ExtraCharge) => {
-    let updatedCharges: ExtraCharge[];
-    if (editingChargeIndex !== null) {
-      updatedCharges = extraCharges.map((c, i) => (i === editingChargeIndex ? charge : c));
-      updateExtraCharge(editingChargeIndex, charge);
-    } else {
-      updatedCharges = [...extraCharges, charge];
-      addExtraCharge(charge);
-    }
+  const handleChargeSubmit = useCallback(async (charge: Charge) => {
+    const updatedCharges = editingChargeIndex !== null
+      ? charges.map((c, i) => (i === editingChargeIndex ? charge : c))
+      : [...charges, charge];
+
     setChargeModalVisible(false);
     setEditingChargeIndex(null);
 
-    // Submit immediately after every save
-    if (ride?.bookingVehicleId) {
-      try {
-        await submitCharges(ride.bookingVehicleId, aggregateCharges(updatedCharges));
-      } catch (err) {
-        console.error('[driver-home] submitCharges failed:', err);
-        Alert.alert('Warning', 'Charge saved locally but failed to sync. It will be retried.');
-      }
-    }
-  }, [editingChargeIndex, extraCharges, addExtraCharge, updateExtraCharge, ride]);
+    await saveCharges(updatedCharges);
+  }, [editingChargeIndex, charges, saveCharges]);
 
   const handleChargeDismiss = useCallback(() => {
     setChargeModalVisible(false);
@@ -394,16 +372,15 @@ export default function DriverHomeScreen() {
   }
 
   const chargeBeingEdited =
-    editingChargeIndex !== null ? extraCharges[editingChargeIndex] : undefined;
+    editingChargeIndex !== null ? charges[editingChargeIndex] : undefined;
 
   return (
     <View style={styles.root}>
       {/* ── Full-screen map ──────────────────────────────────────────────────── */}
       <MapViewContainer
         driverLocation={location}
-        pickupLocation={pickupCoordinate}
-        tripDestination={tripDestination}
-        tripWaypoints={tripWaypoints}
+        routePoints={mapMode ? routePoints : undefined}
+        mode={mapMode}
         onRouteUpdate={isPickupMode ? handleRouteUpdate : undefined}
       />
 
@@ -420,10 +397,10 @@ export default function DriverHomeScreen() {
                 <Text style={styles.pickupHeaderSub}>{headerSubtitle}</Text>
               ) : null}
             </View>
-            {extraCharges.length > 0 && (
+            {charges.length > 0 && (
               <Pressable style={styles.chargeBadge} onPress={handleOpenChargesSummary}>
                 <Ionicons name="receipt-outline" size={12} color="#EDB96D" />
-                <Text style={styles.chargeBadgeText}>{extraCharges.length}</Text>
+                <Text style={styles.chargeBadgeText}>{charges.length}</Text>
               </Pressable>
             )}
           </View>
@@ -484,9 +461,11 @@ export default function DriverHomeScreen() {
           rideStatus={ride.status}
           destinationText={ride.destinationText}
           stoppages={ride.stoppages}
-          chargeCount={extraCharges.length}
+          chargeCount={charges.length}
           specialRemarks={ride.specialRemarks}
           specialRequest={ride.specialRequest}
+          nextWaypointCoord={nextWaypoint}
+          pickupCoord={ride.pickup}
           onArrivedAtPickup={handleArrivedAtPickup}
           onEnterOTP={handleEnterOTP}
           onEndTrip={handleEndTrip}
@@ -516,7 +495,7 @@ export default function DriverHomeScreen() {
       {/* ── Charges Summary Modal ────────────────────────────────────────────── */}
       <ChargesSummaryModal
         visible={chargesSummaryVisible}
-        charges={extraCharges}
+        charges={charges}
         onDismiss={() => setChargesSummaryVisible(false)}
         onAddCharge={handleOpenAddCharge}
         onEditCharge={handleOpenEditCharge}

@@ -100,17 +100,21 @@ export default function BookingCard({ booking }: BookingCardProps) {
 
       <View style={styles.divider} />
 
-      {/* Customer name + booking reference */}
+      {/* Booking ID — top row */}
+      {booking.bookingReference ? (
+        <View style={styles.refRow}>
+          <View style={styles.refBadge}>
+            <Text style={styles.refText}>{booking.bookingReference}</Text>
+          </View>
+        </View>
+      ) : null}
+
+      {/* Customer name */}
       <View style={styles.customerNameRow}>
         <Ionicons name="person-outline" size={15} color="#8E8E93" />
         <Text style={styles.categoryName} numberOfLines={1}>
           {booking.customerName || '—'}
         </Text>
-        {booking.bookingReference ? (
-          <View style={styles.refBadge}>
-            <Text style={styles.refText}>{booking.bookingReference}</Text>
-          </View>
-        ) : null}
       </View>
 
       {/* Pickup address — directly below customer name */}
@@ -210,12 +214,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#2C2C2E',
     marginBottom: 12,
   },
+  refRow: {
+    marginBottom: 8,
+  },
   customerNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
     marginBottom: 6,
-    flexWrap: 'wrap',
   },
   categoryName: {
     color: '#FFFFFF',

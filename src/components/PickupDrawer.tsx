@@ -12,6 +12,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RideStatus, Stoppage } from '../types/ride';
 import WaitTimerDisplay from './WaitTimerDisplay';
 import ChargeIconButton from './ChargeIconButton';
+import { openNextWaypointInGoogleMaps } from '../utils/googleMapsUrlBuilder';
+import { LatLng } from '../utils/googleMapsUrlBuilder';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -46,6 +48,16 @@ export interface PickupDrawerProps {
     beverages?: string[];
     other?: string;
   };
+  /**
+   * Next waypoint coordinate from the location-update API response.
+   * Always used as the Google Maps target when available.
+   */
+  nextWaypointCoord?: LatLng | null;
+  /**
+   * Pickup coordinate from the booking — used as the initial Maps target before
+   * the first location-update tick arrives (GOING_TO_PICKUP state).
+   */
+  pickupCoord?: LatLng | null;
   onArrivedAtPickup: () => void;
   onEnterOTP: () => void;
   onEndTrip?: () => void;
@@ -87,6 +99,8 @@ const PickupDrawer = memo(function PickupDrawer({
   chargeCount = 0,
   specialRemarks,
   specialRequest,
+  nextWaypointCoord,
+  pickupCoord,
   onArrivedAtPickup,
   onEnterOTP,
   onEndTrip,
@@ -103,6 +117,9 @@ const PickupDrawer = memo(function PickupDrawer({
   const initials = getInitials(riderName);
 
   const isTripStarted = rideStatus === 'TRIP_STARTED';
+
+  // Use live next-waypoint when available; fall back to pickup coord for pre-trip
+  const mapsTarget: LatLng | null = nextWaypointCoord ?? pickupCoord ?? null;
 
   const handleCall = () => {
     if (!customerContact) {
@@ -242,7 +259,7 @@ const PickupDrawer = memo(function PickupDrawer({
             </LinearGradient>
           </Pressable>
 
-          {/* Wait / Resume  +  Charges icon — side by side */}
+          {/* Wait / Resume  +  Charges icon  +  Google Maps — side by side */}
           <View style={[styles.secondaryRow, styles.waitButtonWrapper]}>
             <Pressable
               style={styles.secondaryButtonFlex}
@@ -262,31 +279,66 @@ const PickupDrawer = memo(function PickupDrawer({
             </Pressable>
 
             <ChargeIconButton count={chargeCount} onPress={onOpenChargesSummary ?? (() => {})} />
+
+            {mapsTarget && (
+              <Pressable
+                style={styles.mapsIconButton}
+                onPress={() => openNextWaypointInGoogleMaps(mapsTarget)}
+                accessibilityRole="button"
+                accessibilityLabel="Open next destination in Google Maps"
+              >
+                <Ionicons name="navigate" size={18} color="#4285F4" />
+              </Pressable>
+            )}
           </View>
         </>
       ) : rideStatus === 'GOING_TO_PICKUP' ? (
-        <Pressable onPress={onArrivedAtPickup} style={styles.buttonWrapper}>
-          <LinearGradient
-            colors={['#E5B566', '#B5783C']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.ctaButton}
-          >
-            <Text style={styles.ctaButtonText}>Arrived at Pickup</Text>
-          </LinearGradient>
-        </Pressable>
+        <View style={styles.ctaRow}>
+          <Pressable onPress={onArrivedAtPickup} style={styles.ctaFlex}>
+            <LinearGradient
+              colors={['#E5B566', '#B5783C']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.ctaButton}
+            >
+              <Text style={styles.ctaButtonText}>Arrived at Pickup</Text>
+            </LinearGradient>
+          </Pressable>
+          {mapsTarget && (
+            <Pressable
+              style={styles.mapsIconButton}
+              onPress={() => openNextWaypointInGoogleMaps(mapsTarget)}
+              accessibilityRole="button"
+              accessibilityLabel="Open pickup location in Google Maps"
+            >
+              <Ionicons name="navigate" size={18} color="#4285F4" />
+            </Pressable>
+          )}
+        </View>
       ) : (
-        <Pressable onPress={onEnterOTP} style={styles.buttonWrapper}>
-          <LinearGradient
-            colors={['#E5B566', '#B5783C']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.ctaButton}
-          >
-            <Ionicons name="keypad-outline" size={18} color="#000" style={styles.ctaIcon} />
-            <Text style={styles.ctaButtonText}>Enter OTP</Text>
-          </LinearGradient>
-        </Pressable>
+        <View style={styles.ctaRow}>
+          <Pressable onPress={onEnterOTP} style={styles.ctaFlex}>
+            <LinearGradient
+              colors={['#E5B566', '#B5783C']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.ctaButton}
+            >
+              <Ionicons name="keypad-outline" size={18} color="#000" style={styles.ctaIcon} />
+              <Text style={styles.ctaButtonText}>Enter OTP</Text>
+            </LinearGradient>
+          </Pressable>
+          {mapsTarget && (
+            <Pressable
+              style={styles.mapsIconButton}
+              onPress={() => openNextWaypointInGoogleMaps(mapsTarget)}
+              accessibilityRole="button"
+              accessibilityLabel="Open destination in Google Maps"
+            >
+              <Ionicons name="navigate" size={18} color="#4285F4" />
+            </Pressable>
+          )}
+        </View>
       )}
 
       {/* ── Below-fold: expanded-only details ──────────────────────────────── */}
@@ -354,6 +406,7 @@ const PickupDrawer = memo(function PickupDrawer({
           )}
 
           <View style={styles.actionsRow}>
+            {/* Call button */}
             <Pressable style={styles.iconButton} onPress={handleCall}>
               <Ionicons name="call-outline" size={20} color="#EDB96D" />
             </Pressable>
@@ -485,6 +538,16 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 16,
   },
+  // Row that holds a CTA + optional maps icon button side-by-side
+  ctaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  ctaFlex: {
+    flex: 1,
+  },
   ctaButton: {
     paddingVertical: 16,
     borderRadius: 16,
@@ -598,6 +661,16 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     backgroundColor: '#2C2C2E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapsIconButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: 'rgba(66, 133, 244, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(66, 133, 244, 0.28)',
     alignItems: 'center',
     justifyContent: 'center',
   },

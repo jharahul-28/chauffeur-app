@@ -61,14 +61,40 @@ export const postContinue = (bookingVehicleId: string): Promise<void> =>
     });
 
 /** Called when the driver taps "End Trip". */
-export const postComplete = (bookingVehicleId: string): Promise<void> =>
-    apiClient.post(`${base(bookingVehicleId)}/complete`).then(() => {
-        console.log('[rideService] complete ✓', bookingVehicleId);
+export const postEndRide = (bookingVehicleId: string): Promise<void> =>
+    apiClient.post(`${base(bookingVehicleId)}/end-ride`).then(() => {
+        console.log('[rideService] end-ride ✓', bookingVehicleId);
     });
+
+export type PaymentStatus = 'PAID' | 'UNPAID';
+
+export interface CompletePaymentPayload {
+  paymentStatus: PaymentStatus;
+  amount?: number;
+}
+
+/** Called on payment confirmation after the ride ends. */
+export const postCompletePayment = (
+    bookingVehicleId: string,
+    payload: CompletePaymentPayload,
+): Promise<void> =>
+    apiClient.post(`${base(bookingVehicleId)}/complete`, payload).then(() => {
+        console.log('[rideService] complete (payment) ✓', bookingVehicleId, payload.paymentStatus);
+    });
+
+export interface NextWaypoint {
+  type: 'PICKUP' | 'STOP' | 'DROP';
+  latitude: number;
+  longitude: number;
+  address: string;
+  placeId?: string;
+  status?: string;
+}
 
 export interface LocationUpdateResponse {
   arrived: boolean;
-  arrivedWaypointType: 'PICKUP' | 'STOP' | 'DESTINATION';
+  /** Next waypoint the driver should head to. Always present when a ride is active. */
+  waypoint: NextWaypoint | null;
   distanceMeters: number;
 }
 

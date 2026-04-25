@@ -3,12 +3,14 @@ import { getChauffeurId } from '../storage/tokenStorage';
 import {
     ApiBookingStatus,
     ApiBookingsResponse,
+    ApiBookingVehicle,
     Booking,
-    mapApiBooking,
+    mapApiBookingVehicle,
 } from '../types/booking';
 import { BookingDetailResponse, Waypoint } from '../types/bookingDetail';
 import { ActiveRide, Stoppage } from '../types/ride';
 import { Coordinate } from '../components/MapViewContainer';
+import { RawWaypoint } from '../utils/waypointUtils';
 
 /**
  * Fetches bookings for the authenticated chauffeur.
@@ -33,13 +35,13 @@ export async function fetchBookings(status: ApiBookingStatus): Promise<Booking[]
     );
 
     // Handle both array response and { data: [] } wrapped response
-    const raw = Array.isArray(response.data)
-        ? (response.data as unknown as ApiBookingsResponse['data'])
+    const raw: ApiBookingVehicle[] = Array.isArray(response.data)
+        ? (response.data as unknown as ApiBookingVehicle[])
         : (response.data as ApiBookingsResponse).data ?? [];
 
     console.log('[bookingService] Fetched', raw.length, 'bookings for status:', status);
 
-    return raw.map(mapApiBooking);
+    return raw.map(mapApiBookingVehicle);
 }
 
 // ─── Booking Detail ───────────────────────────────────────────────────────────
@@ -56,14 +58,19 @@ export async function fetchBookingDetail(bookingId: string): Promise<BookingDeta
 
 // ─── Mapper: BookingDetail → ActiveRide ──────────────────────────────────────
 
+/** Resolves whichever field the API chose to use for the waypoint type. */
+function wpType(wp: Waypoint): string {
+    return (wp.waypointType ?? wp.type ?? '').toUpperCase();
+}
+
 function pickupWaypoint(waypoints: Waypoint[]): Waypoint {
-    const wp = waypoints.find((w) => w.waypointType === 'PICKUP');
+    const wp = waypoints.find((w) => wpType(w) === 'PICKUP');
     if (!wp) throw new Error('Booking has no PICKUP waypoint');
     return wp;
 }
 
 function dropWaypoint(waypoints: Waypoint[]): Waypoint {
-    const wp = waypoints.find((w) => w.waypointType === 'DROP');
+    const wp = waypoints.find((w) => wpType(w) === 'DROP');
     if (!wp) throw new Error('Booking has no DROP waypoint');
     return wp;
 }
@@ -72,7 +79,7 @@ function toCoord(wp: Waypoint): Coordinate {
     const lat = typeof wp.latitude === 'number' && isFinite(wp.latitude) ? wp.latitude : 0;
     const lng = typeof wp.longitude === 'number' && isFinite(wp.longitude) ? wp.longitude : 0;
     if (lat === 0 && lng === 0) {
-        console.warn('[bookingService] Waypoint has invalid/zero coordinates', { id: wp.id, type: wp.waypointType });
+        console.warn('[bookingService] Waypoint has invalid/zero coordinates', { type: wpType(wp) });
     }
     return { latitude: lat, longitude: lng };
 }
@@ -90,21 +97,34 @@ function formatFare(amount: number | null): string {
 export function mapBookingDetailToRide(
     detail: BookingDetailResponse
 ): Omit<ActiveRide, 'status' | 'bookingVehicleId'> {
-    const sorted = [...detail.waypoints].sort(
-        (a, b) => a.waypointSequence - b.waypointSequence
-    );
+    const TYPE_ORDER: Record<string, number> = { PICKUP: 0, STOP: 1, DROP: 2 };
+    const sorted = [...detail.waypoints].sort((a, b) => {
+        const seqA = a.waypointSequence ?? TYPE_ORDER[wpType(a)] ?? 99;
+        const seqB = b.waypointSequence ?? TYPE_ORDER[wpType(b)] ?? 99;
+        return seqA - seqB;
+    });
 
     const pickup = pickupWaypoint(sorted);
     const drop = dropWaypoint(sorted);
 
     const stoppages: Stoppage[] = sorted
-        .filter((w) => w.waypointType === 'STOP')
-        .map((w) => ({
-            id: String(w.id),
+        .filter((w) => wpType(w) === 'STOP')
+        .map((w, i) => ({
+            id: String(w.id ?? `stop-${i}`),
             label: w.address,
             latitude: w.latitude,
             longitude: w.longitude,
         }));
+
+    const rawWaypoints: RawWaypoint[] = sorted.map((w, i) => ({
+        id: w.id ?? i,
+        waypointSequence: w.waypointSequence ?? i,
+        waypointType: wpType(w) as RawWaypoint['waypointType'],
+        latitude: w.latitude,
+        longitude: w.longitude,
+        address: w.address,
+        arrivedAt: w.arrivedAt ?? null,
+    }));
 
     return {
         id: String(detail.id),
@@ -118,6 +138,8 @@ export function mapBookingDetailToRide(
         stoppages,
         fare: formatFare(detail.totalFare),
         totalFare: detail.totalFare ?? 0,
+        balanceAmount: detail.balanceAmount ?? 0,
+        rawWaypoints,
         specialRemarks: detail.metadata?.specialRemarks || undefined,
         specialRequest: detail.specialRequest || undefined,
     };
