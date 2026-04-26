@@ -39,6 +39,8 @@ import {
   postContinue,
   postEndRide,
 } from '../../src/services/rideService';
+import { canEndTrip } from '../../src/utils/tripGuard';
+import { getErrorMessage } from '../../src/utils/apiErrorParser';
 
 // ─── Top-bar label per ride status ────────────────────────────────────────────
 
@@ -79,6 +81,7 @@ export default function DriverHomeScreen() {
   const [editingChargeIndex, setEditingChargeIndex] = useState<number | null>(null);
 
   const [isEndingTrip, setIsEndingTrip] = useState(false);
+  const [isArrivingAtPickup, setIsArrivingAtPickup] = useState(false);
 
   const { location, hasPermission, isLoading, error } = useDriverLocation();
 
@@ -171,14 +174,19 @@ export default function DriverHomeScreen() {
 
   // ── Ride state transitions ────────────────────────────────────────────────
 
-  const handleArrivedAtPickup = useCallback(() => {
-    updateStatus('ARRIVED_AT_PICKUP');
-    if (ride?.bookingVehicleId) {
-      postArrived(ride.bookingVehicleId).catch((err) =>
-        console.error('[driver-home] postArrived failed:', err)
-      );
+  const handleArrivedAtPickup = useCallback(async () => {
+    if (!ride?.bookingVehicleId || isArrivingAtPickup) return;
+    setIsArrivingAtPickup(true);
+    try {
+      await postArrived(ride.bookingVehicleId);
+      updateStatus('ARRIVED_AT_PICKUP');
+    } catch (err) {
+      console.error('[driver-home] postArrived failed:', err);
+      Alert.alert('Error', getErrorMessage(err, 'Failed to confirm arrival. Please try again.'));
+    } finally {
+      setIsArrivingAtPickup(false);
     }
-  }, [updateStatus, ride]);
+  }, [ride, isArrivingAtPickup, updateStatus]);
 
   const handleEnterOTP = useCallback(() => {
     updateStatus('OTP_PENDING');
@@ -201,49 +209,43 @@ export default function DriverHomeScreen() {
     updateStatus('ARRIVED_AT_PICKUP');
   }, [updateStatus]);
 
-  const handleEndTrip = useCallback(() => {
+  const handleEndTrip = useCallback(async () => {
     if (!ride || isEndingTrip) return;
 
-    Alert.alert(
-      'End Trip?',
-      'Are you sure you want to end the trip?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'End Trip',
-          style: 'destructive',
-          onPress: async () => {
-            setIsEndingTrip(true);
-            stopWaiting();
+    const guard = canEndTrip(isWaiting);
+    if (!guard.allowed) {
+      Alert.alert('Cannot End Trip', guard.reason);
+      throw new Error(guard.reason); // causes SlideToConfirm to reset
+    }
 
-            try {
-              await postEndRide(ride.bookingVehicleId);
-              resetWaitTimer();
-              updateStatus('TRIP_COMPLETED');
-              clearRide();
+    setIsEndingTrip(true);
+    stopWaiting();
 
-              router.push({
-                pathname: '/(driver)/pending-amount',
-                params: {
-                  rideId: ride.id,
-                  bookingVehicleId: ride.bookingVehicleId,
-                  riderName: ride.riderName,
-                  pickupText: ride.pickupText,
-                  destinationText: ride.destinationText,
-                  fare: ride.fare,
-                  balanceAmount: String(ride.balanceAmount ?? ''),
-                },
-              });
-            } catch (err) {
-              console.error('[driver-home] endTrip failed:', err);
-              Alert.alert('Failed to End Trip', 'Something went wrong. Please try again.');
-              setIsEndingTrip(false);
-            }
-          },
+    try {
+      await postEndRide(ride.bookingVehicleId);
+      resetWaitTimer();
+      updateStatus('TRIP_COMPLETED');
+      clearRide();
+
+      router.push({
+        pathname: '/(driver)/pending-amount',
+        params: {
+          rideId: ride.id,
+          bookingVehicleId: ride.bookingVehicleId,
+          riderName: ride.riderName,
+          pickupText: ride.pickupText,
+          destinationText: ride.destinationText,
+          fare: ride.fare,
+          balanceAmount: String(ride.balanceAmount ?? ''),
         },
-      ],
-    );
-  }, [ride, isEndingTrip, stopWaiting, resetWaitTimer, updateStatus, clearRide, router]);
+      });
+    } catch (err) {
+      console.error('[driver-home] endTrip failed:', err);
+      Alert.alert('Failed to End Trip', getErrorMessage(err, 'Something went wrong. Please try again.'));
+      setIsEndingTrip(false);
+      // SlideToConfirm auto-resets when loading flips false via its useEffect
+    }
+  }, [ride, isEndingTrip, isWaiting, stopWaiting, resetWaitTimer, updateStatus, clearRide, router]);
 
   // ── Wait / Resume ────────────────────────────────────────────────────────
 
@@ -476,6 +478,7 @@ export default function DriverHomeScreen() {
           elapsedWaitTime={elapsedTime}
           isFreeTimeExceeded={isFreeTimeExceeded}
           isEndingTrip={isEndingTrip}
+          isArrivingAtPickup={isArrivingAtPickup}
         />
       ) : (
         <RideInfoPanel />

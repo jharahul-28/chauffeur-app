@@ -7,28 +7,53 @@ interface WaypointListProps {
   waypoints: Waypoint[];
 }
 
-const TYPE_CONFIG = {
-  PICKUP: { label: 'Pickup', color: '#30D158', iconName: 'location' as const },
-  STOP: { label: 'Stop', color: '#FF9F0A', iconName: 'ellipse' as const },
-  DROP: { label: 'Drop', color: '#FF453A', iconName: 'flag' as const },
+type PositionType = 'PICKUP' | 'STOP' | 'DESTINATION';
+
+const TYPE_CONFIG: Record<PositionType, { label: string; color: string; iconName: 'location' | 'ellipse' | 'flag' }> = {
+  PICKUP:      { label: 'Pickup',      color: '#30D158', iconName: 'location' },
+  STOP:        { label: 'Stop',        color: '#FF9F0A', iconName: 'ellipse' },
+  DESTINATION: { label: 'Destination', color: '#FF453A', iconName: 'flag' },
 };
 
-export default function WaypointList({ waypoints }: WaypointListProps) {
-  const sorted = useMemo(
-    () => [...waypoints].sort((a, b) => a.waypointSequence - b.waypointSequence),
-    [waypoints],
-  );
+function resolvePositionType(index: number, total: number): PositionType {
+  if (index === 0) return 'PICKUP';
+  if (index === total - 1) return 'DESTINATION';
+  return 'STOP';
+}
 
-  if (sorted.length === 0) return null;
+function waypointKey(wp: Waypoint, index: number): string {
+  if (wp.id != null) return `${wp.id}-${wp.waypointSequence ?? index}-${index}`;
+  return `${wp.latitude}-${wp.longitude}-${index}`;
+}
+
+export default function WaypointList({ waypoints }: WaypointListProps) {
+  const sorted = useMemo(() => {
+    if (!waypoints || waypoints.length === 0) return [];
+    return [...waypoints].sort((a, b) => {
+      const seqA = a.waypointSequence ?? 0;
+      const seqB = b.waypointSequence ?? 0;
+      return seqA - seqB;
+    });
+  }, [waypoints]);
+
+  if (sorted.length === 0) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.sectionTitle}>ROUTE</Text>
+        <Text style={styles.emptyText}>No waypoints available</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>ROUTE</Text>
       {sorted.map((wp, index) => {
-        const cfg = TYPE_CONFIG[wp.waypointType] ?? TYPE_CONFIG.STOP;
+        const positionType = resolvePositionType(index, sorted.length);
+        const cfg = TYPE_CONFIG[positionType];
         const isLast = index === sorted.length - 1;
         return (
-          <View key={wp.id} style={styles.waypointRow}>
+          <View key={waypointKey(wp, index)} style={styles.waypointRow}>
             <View style={styles.iconCol}>
               <View style={[styles.iconCircle, { borderColor: cfg.color }]}>
                 <Ionicons name={cfg.iconName} size={12} color={cfg.color} />
@@ -110,5 +135,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     lineHeight: 18,
+  },
+  emptyText: {
+    color: '#8E8E93',
+    fontSize: 13,
+    paddingBottom: 10,
   },
 });

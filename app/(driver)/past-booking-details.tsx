@@ -38,11 +38,6 @@ function formatTime(timeStr: string | null | undefined): string {
   return `${hour}:${m} ${ampm}`;
 }
 
-function formatAmount(amount: number | null | undefined): string {
-  if (amount == null) return '—';
-  return `₹${amount.toLocaleString('en-IN')}`;
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function PastBookingDetailsScreen() {
@@ -127,7 +122,6 @@ export default function PastBookingDetailsScreen() {
           title="Customer Info"
           rows={[
             { label: 'Name', value: data.metadata?.customerName },
-            { label: 'Contact', value: data.metadata?.customerContact },
             { label: 'Type', value: data.metadata?.customerType },
             { label: 'Remarks', value: data.metadata?.specialRemarks },
           ]}
@@ -139,7 +133,6 @@ export default function PastBookingDetailsScreen() {
           rows={[
             { label: 'Trip Type', value: data.tripType },
             { label: 'Distance', value: data.kmRide != null ? `${data.kmRide} km` : null },
-            { label: 'Booking Source', value: data.bookingSource },
           ]}
         />
 
@@ -148,31 +141,7 @@ export default function PastBookingDetailsScreen() {
           <WaypointList waypoints={data.waypoints} />
         )}
 
-        {/* 5. Fare Info */}
-        <BookingInfoSection
-          title="Fare Info"
-          rows={[
-            { label: 'Estimated Fare', value: formatAmount(data.estimatedFare) },
-            { label: 'Actual Fare', value: formatAmount(data.actualFare) },
-            { label: 'Waiting Charge', value: formatAmount(data.additionalCharges?.waitingCharge) },
-            { label: 'MCD / Toll', value: formatAmount(data.additionalCharges?.mcFare) },
-            { label: 'Parking', value: formatAmount(data.additionalCharges?.parkingCharge) },
-            { label: 'Total Fare', value: formatAmount(data.totalFare) },
-            { label: 'Advance Paid', value: formatAmount(data.advanceAmount) },
-            { label: 'Balance Due', value: formatAmount(data.balanceAmount) },
-          ]}
-        />
-
-        {/* 6. Payment Info */}
-        <BookingInfoSection
-          title="Payment Info"
-          rows={[
-            { label: 'Mode', value: data.paymentMode },
-            { label: 'Status', value: data.paymentStatus },
-          ]}
-        />
-
-        {/* 7. Special Request — hidden when empty */}
+        {/* 5. Special Request — hidden when empty */}
         {hasSpecialRequest && (
           <View style={styles.specialRequestSection}>
             <Text style={styles.specialRequestTitle}>Special Request</Text>

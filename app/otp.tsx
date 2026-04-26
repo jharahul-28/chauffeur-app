@@ -24,6 +24,7 @@ import OtpInput from '@/src/components/OtpInput';
 import { generateOtp, verifyOtp } from '@/src/services/authService';
 import GradientButton from '@/src/components/GradientButton';
 import { BlurView } from 'expo-blur';
+import { getErrorMessage } from '@/src/utils/apiErrorParser';
 
 export default function OtpScreen() {
     const { countryCode, phone } = useLocalSearchParams<{
@@ -42,8 +43,9 @@ export default function OtpScreen() {
     const handleResend = async () => {
         try {
             await generateOtp(countryCode!, phone!);
-        } catch {
-            Alert.alert('Error', 'Failed to resend OTP. Please try again.');
+        } catch (err) {
+            const message = getErrorMessage(err, 'Failed to resend OTP. Please try again.');
+            Alert.alert('Error', message);
         }
     };
 
@@ -65,7 +67,8 @@ export default function OtpScreen() {
             router.replace('/(driver)/(tabs)/bookings');
         } catch (err) {
             console.error('[OTP] Verification failed:', err);
-            setError('OTP is invalid');
+            const message = getErrorMessage(err, 'OTP verification failed. Please try again.');
+            setError(message);
             setOtp(['', '', '', '']);
             setTimeout(() => firstInputRef.current?.focus(), 50);
         } finally {

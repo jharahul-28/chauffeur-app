@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RideStatus, Stoppage } from '../types/ride';
 import WaitTimerDisplay from './WaitTimerDisplay';
 import ChargeIconButton from './ChargeIconButton';
+import SlideToConfirm from './SlideToConfirm';
 import { openNextWaypointInGoogleMaps } from '../utils/googleMapsUrlBuilder';
 import { LatLng } from '../utils/googleMapsUrlBuilder';
 
@@ -71,6 +72,8 @@ export interface PickupDrawerProps {
   isFreeTimeExceeded?: boolean;
   /** True while trip completion API call is in-flight. */
   isEndingTrip?: boolean;
+  /** True while the arrived-at-pickup API call is in-flight. */
+  isArrivingAtPickup?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -111,6 +114,7 @@ const PickupDrawer = memo(function PickupDrawer({
   elapsedWaitTime = 0,
   isFreeTimeExceeded = false,
   isEndingTrip = false,
+  isArrivingAtPickup = false,
 }: PickupDrawerProps) {
   const insets = useSafeAreaInsets();
   const bottomPad = Math.max(insets.bottom, 12);
@@ -237,27 +241,16 @@ const PickupDrawer = memo(function PickupDrawer({
           )}
 
           {/* End Trip */}
-          <Pressable
-            style={styles.buttonWrapper}
-            onPress={onEndTrip}
-            disabled={isEndingTrip}
-          >
-            <LinearGradient
-              colors={isEndingTrip ? ['#8E6B35', '#6B4A22'] : ['#E5B566', '#B5783C']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.ctaButton}
-            >
-              {isEndingTrip ? (
-                <ActivityIndicator size="small" color="#000" style={styles.ctaIcon} />
-              ) : (
-                <Ionicons name="flag-outline" size={18} color="#000" style={styles.ctaIcon} />
-              )}
-              <Text style={styles.ctaButtonText}>
-                {isEndingTrip ? 'Ending Trip…' : 'End Trip'}
-              </Text>
-            </LinearGradient>
-          </Pressable>
+          <View style={styles.buttonWrapper}>
+            <SlideToConfirm
+              text="Slide to End Trip"
+              onComplete={onEndTrip ?? (() => { })}
+              loading={isEndingTrip}
+              disabled={isEndingTrip}
+              variant="danger"
+              accessibilityLabel="Slide to end the trip"
+            />
+          </View>
 
           {/* Wait / Resume  +  Charges icon  +  Google Maps — side by side */}
           <View style={[styles.secondaryRow, styles.waitButtonWrapper]}>
@@ -278,7 +271,7 @@ const PickupDrawer = memo(function PickupDrawer({
               </View>
             </Pressable>
 
-            <ChargeIconButton count={chargeCount} onPress={onOpenChargesSummary ?? (() => {})} />
+            <ChargeIconButton count={chargeCount} onPress={onOpenChargesSummary ?? (() => { })} />
 
             {mapsTarget && (
               <Pressable
@@ -294,16 +287,16 @@ const PickupDrawer = memo(function PickupDrawer({
         </>
       ) : rideStatus === 'GOING_TO_PICKUP' ? (
         <View style={styles.ctaRow}>
-          <Pressable onPress={onArrivedAtPickup} style={styles.ctaFlex}>
-            <LinearGradient
-              colors={['#E5B566', '#B5783C']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.ctaButton}
-            >
-              <Text style={styles.ctaButtonText}>Arrived at Pickup</Text>
-            </LinearGradient>
-          </Pressable>
+          <View style={styles.ctaFlex}>
+            <SlideToConfirm
+              text="Arrived at PickUp"
+              onComplete={onArrivedAtPickup}
+              loading={isArrivingAtPickup}
+              disabled={isArrivingAtPickup}
+              variant="primary"
+              accessibilityLabel="Slide to confirm arrival at pickup"
+            />
+          </View>
           {mapsTarget && (
             <Pressable
               style={styles.mapsIconButton}

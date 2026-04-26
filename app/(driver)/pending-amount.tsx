@@ -14,10 +14,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ChargeModal from '../../src/components/ChargeModal';
 import ChargesSummaryModal from '../../src/components/ChargesSummaryModal';
+import PaymentModal from '../../src/components/PaymentModal';
 import { Charge, CHARGE_DISPLAY_NAME, CHARGE_ORDER } from '../../src/types/charge';
 import { useCharges } from '../../src/hooks/useCharges';
 import { postCompletePayment } from '../../src/services/rideService';
 import { getBookingDetails } from '../../src/services/bookingApi';
+import { getErrorMessage } from '../../src/utils/apiErrorParser';
 
 // ─── Screen params ────────────────────────────────────────────────────────────
 
@@ -51,6 +53,7 @@ export default function PendingAmountScreen() {
 
   // ── Payment state ─────────────────────────────────────────────────────────
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const [paymentModalVisible, setPaymentModalVisible] = useState(false);
 
   // ── Charge modal state ────────────────────────────────────────────────────
   const [chargesSummaryVisible, setChargesSummaryVisible] = useState(false);
@@ -114,37 +117,58 @@ export default function PendingAmountScreen() {
 
   // ── Payment handlers ──────────────────────────────────────────────────────
 
-  const handlePayment = useCallback(async (paid: boolean) => {
-    if (!bookingVehicleId || isSubmittingPayment) return;
+  // "Paid" — open the modal so the driver enters the collected amount
+  const handlePaid = useCallback(() => {
+    if (isSubmittingPayment) return;
+    setPaymentModalVisible(true);
+  }, [isSubmittingPayment]);
 
+  // Called by PaymentModal with the entered amount
+  const handlePaymentModalSubmit = useCallback(async (amount: number) => {
+    if (!bookingVehicleId) return;
     setIsSubmittingPayment(true);
+    setPaymentModalVisible(false);
     try {
-      if (paid) {
-        const amount = balanceAmount ?? 0;
-        await postCompletePayment(bookingVehicleId, { paymentStatus: 'PAID', amount });
-      } else {
-        await postCompletePayment(bookingVehicleId, { paymentStatus: 'UNPAID' });
-      }
+      await postCompletePayment(bookingVehicleId, { paymentStatus: 'PAID', amount });
       router.replace('/(driver)/(tabs)/bookings');
     } catch (err) {
-      console.error('[pending-amount] completePayment failed:', err);
-      Alert.alert('Payment Error', 'Failed to record payment. Please try again.');
+      console.error('[pending-amount] completePayment (PAID) failed:', err);
+      const message = getErrorMessage(err, 'Failed to record payment. Please try again.');
+      Alert.alert('Payment Error', message);
     } finally {
       setIsSubmittingPayment(false);
     }
-  }, [bookingVehicleId, isSubmittingPayment, balanceAmount, router]);
+  }, [bookingVehicleId, router]);
 
-  const handlePaid = useCallback(() => handlePayment(true), [handlePayment]);
+  // "Unpaid" — direct API call after confirmation, no modal
   const handleUnpaid = useCallback(() => {
+    if (isSubmittingPayment) return;
     Alert.alert(
       'Mark as Unpaid?',
       'This will record the trip as unpaid. Are you sure?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Confirm', style: 'destructive', onPress: () => handlePayment(false) },
+        {
+          text: 'Confirm',
+          style: 'destructive',
+          onPress: async () => {
+            if (!bookingVehicleId) return;
+            setIsSubmittingPayment(true);
+            try {
+              await postCompletePayment(bookingVehicleId, { paymentStatus: 'UNPAID' });
+              router.replace('/(driver)/(tabs)/bookings');
+            } catch (err) {
+              console.error('[pending-amount] completePayment (UNPAID) failed:', err);
+              const message = getErrorMessage(err, 'Failed to record payment. Please try again.');
+              Alert.alert('Payment Error', message);
+            } finally {
+              setIsSubmittingPayment(false);
+            }
+          },
+        },
       ],
     );
-  }, [handlePayment]);
+  }, [bookingVehicleId, isSubmittingPayment, router]);
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -305,6 +329,14 @@ export default function PendingAmountScreen() {
           setEditingChargeIndex(null);
         }}
         initialCharge={chargeBeingEdited}
+      />
+
+      {/* ── Payment Modal (Paid flow) ──────────────────────────────────────── */}
+      <PaymentModal
+        visible={paymentModalVisible}
+        balanceAmount={balanceAmount ?? 0}
+        onClose={() => setPaymentModalVisible(false)}
+        onSubmit={handlePaymentModalSubmit}
       />
     </View>
   );

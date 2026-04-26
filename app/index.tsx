@@ -17,6 +17,7 @@ import { BlurView } from "expo-blur";
 import { useRouter } from "expo-router";
 import { bgColors } from "@/src/constants/colors";
 import { generateOtp } from "@/src/services/authService";
+import { getErrorMessage } from "@/src/utils/apiErrorParser";
 
 export default function Index() {
   const router = useRouter();
@@ -42,8 +43,9 @@ export default function Index() {
       await generateOtp(formattedCountryCode, phoneNumber);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       router.push({ pathname: "/otp" as any, params: { countryCode: formattedCountryCode, phone: phoneNumber } });
-    } catch {
-      Alert.alert("Error", "Failed to send OTP. Please try again.");
+    } catch (err) {
+      const message = getErrorMessage(err, "Failed to send OTP. Please try again.");
+      Alert.alert("Error", message);
     } finally {
       setLoading(false);
     }
