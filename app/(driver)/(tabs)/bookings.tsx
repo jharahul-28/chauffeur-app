@@ -51,7 +51,7 @@ export default function BookingsScreen() {
   );
 
   const handleBookingAction = (booking: Booking) => {
-    const action = getActionForBooking(booking.bookingId, booking.id, booking.status);
+    const action = getActionForBooking(booking.bookingId, booking.id, booking.status, booking.tripType);
     if (!action) return;
     router.push({
       pathname: action.navigationTarget as never,

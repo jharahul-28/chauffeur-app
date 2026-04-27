@@ -1,6 +1,21 @@
 // ─── Booking Detail API Response ─────────────────────────────────────────────
 // GET /bookings/:bookingId
 
+export interface HourlyTravelStats {
+  totalTraveledKm: number;
+  totalTravelTimeMinutes: number;
+}
+
+export interface HourlyPackageDetails {
+  hours: number;
+  km: number;
+  hourlyTravelStats: HourlyTravelStats;
+}
+
+export interface HourlyPackage {
+  hourlyPackageDetails: HourlyPackageDetails;
+}
+
 export type WaypointType = 'PICKUP' | 'STOP' | 'DROP';
 
 export interface Waypoint {
@@ -53,4 +68,6 @@ export interface BookingDetailResponse {
   paymentMode: string | null;
   paymentStatus: string;
   waypoints: Waypoint[];
+  /** Present only when tripType === 'HOURLY_RENTALS' */
+  hourlyPackage?: HourlyPackage;
 }

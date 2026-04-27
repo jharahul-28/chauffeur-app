@@ -14,10 +14,6 @@ interface HighlightedBookingCardProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatFare(amount: number): string {
-  return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-}
-
 function formatKm(km: number | null | undefined): string | null {
   if (!km) return null;
   return `${km.toFixed(1)} km`;
@@ -136,9 +132,11 @@ const HighlightedBookingCard = memo(function HighlightedBookingCard({
   booking,
   onAction,
 }: HighlightedBookingCardProps) {
-  const action = getActionForBooking(booking.bookingId, booking.id, booking.status);
+  const action = getActionForBooking(booking.bookingId, booking.id, booking.status, booking.tripType);
 
   const km = formatKm(booking.kmRide);
+  const isHourly = booking.tripType === 'HOURLY_RENTALS';
+  const hourlyHours = booking.hourlyHours ?? booking.hourlyPackage?.hourlyPackageDetails?.hours;
   const totalPassengers = booking.passengers
     ? (booking.passengers.adults ?? 0) + (booking.passengers.children ?? 0)
     : null;
@@ -182,32 +180,24 @@ const HighlightedBookingCard = memo(function HighlightedBookingCard({
           </Text>
         </View>
 
-        {/* ── Route (pickup → drop) ─────────────────────────────────────── */}
-        <RouteDisplay waypoints={booking.waypoints} />
+        {/* ── Route (pickup → drop) — hidden for hourly; only pickup matters ── */}
+        {!isHourly && <RouteDisplay waypoints={booking.waypoints} />}
 
-        {/* ── Fare + trip info row ───────────────────────────────────────── */}
-        <View style={styles.metaRow}>
-          {/* {booking.totalFare > 0 && (
+        {/* ── Hourly duration chip ───────────────────────────────────────── */}
+        {isHourly && hourlyHours != null && (
+          <View style={styles.metaRow}>
             <View style={styles.metaChip}>
-              <Ionicons name="wallet-outline" size={13} color="#EDB96D" />
-              <Text style={styles.metaChipText}>{formatFare(booking.balanceAmount)}</Text>
+              <Ionicons name="timer-outline" size={13} color="#EDB96D" />
+              <Text style={styles.metaChipText}>{hourlyHours} Hour{hourlyHours !== 1 ? 's' : ''} Rental</Text>
             </View>
-          )} */}
-          {/* {km && (
-            <View style={styles.metaChip}>
-              <Ionicons name="navigate-outline" size={13} color="#64D2FF" />
-              <Text style={[styles.metaChipText, { color: '#64D2FF' }]}>{km}</Text>
-            </View>
-          )} */}
-          {/* {booking.tripType ? (
-            <View style={styles.metaChip}>
-              <Ionicons name="repeat-outline" size={13} color="#8E8E93" />
-              <Text style={[styles.metaChipText, { color: '#8E8E93' }]}>
-                {booking.tripType.replace('_', ' ')}
-              </Text>
-            </View>
-          ) : null} */}
-        </View>
+            {km && (
+              <View style={styles.metaChip}>
+                <Ionicons name="navigate-outline" size={13} color="#64D2FF" />
+                <Text style={[styles.metaChipText, { color: '#64D2FF' }]}>{km}</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* ── Vehicle row ────────────────────────────────────────────────── */}
         <View style={styles.vehicleRow}>

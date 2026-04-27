@@ -11,6 +11,23 @@ export type BookingStatus =
   | 'WAITING'
   | 'COMPLETED';
 
+// ─── Hourly package ───────────────────────────────────────────────────────────
+
+export interface HourlyTravelStats {
+  totalTraveledKm: number;
+  totalTravelTimeMinutes: number;
+}
+
+export interface HourlyPackageDetails {
+  hours: number;
+  km: number;
+  hourlyTravelStats: HourlyTravelStats;
+}
+
+export interface HourlyPackage {
+  hourlyPackageDetails: HourlyPackageDetails;
+}
+
 // ─── Waypoint inside booking.waypoints ───────────────────────────────────────
 // NOTE: real API uses `type` (not `waypointType`), and no id/sequence/arrivedAt
 export interface ApiWaypoint {
@@ -91,6 +108,7 @@ export interface ApiNestedBooking {
   specialRequest?: ApiSpecialRequest;
   waypoints: ApiWaypoint[];
   vehicles?: unknown[];
+  hourlyPackage?: HourlyPackage;
 }
 
 // ─── Raw shape returned by GET /chauffeur/:id/bookings ────────────────────────
@@ -172,6 +190,10 @@ export interface Booking {
   waypoints: BookingWaypoint[];
   /** Full ISO datetime "YYYY-MM-DDTHH:mm:ss" used for sort-key precision. */
   rideDateTime?: string;
+  /** Present only when tripType === 'HOURLY_RENTALS' */
+  hourlyPackage?: HourlyPackage;
+  /** Convenience shortcut: hours booked from the hourly package. */
+  hourlyHours?: number;
 }
 
 // ─── Mapper ───────────────────────────────────────────────────────────────────
@@ -249,6 +271,8 @@ export function mapApiBookingVehicle(raw: ApiBookingVehicle): Booking {
     ? { small: sr.luggage.small ?? 0, medium: sr.luggage.medium ?? 0, large: sr.luggage.large ?? 0 }
     : undefined;
 
+  const hourlyPackage = (booking as ApiNestedBooking & { hourlyPackage?: HourlyPackage }).hourlyPackage;
+
   return {
     id: String(raw.id),
     bookingId: String(booking.id),
@@ -276,6 +300,8 @@ export function mapApiBookingVehicle(raw: ApiBookingVehicle): Booking {
     kmRide: booking.kmRide ?? null,
     waypoints,
     rideDateTime: hasSchedule ? `${raw.rideDate}T${raw.pickupTime}` : undefined,
+    hourlyPackage: hourlyPackage ?? undefined,
+    hourlyHours: hourlyPackage?.hourlyPackageDetails?.hours ?? undefined,
   };
 }
 

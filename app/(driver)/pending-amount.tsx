@@ -262,14 +262,18 @@ export default function PendingAmountScreen() {
               <Text style={styles.summaryValue} numberOfLines={2}>{pickupText}</Text>
             </View>
           </View>
-          <View style={styles.summaryConnector} />
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryDotRed} />
-            <View style={styles.summaryInfo}>
-              <Text style={styles.summaryLabel}>DESTINATION</Text>
-              <Text style={styles.summaryValue} numberOfLines={2}>{destinationText}</Text>
-            </View>
-          </View>
+          {!!destinationText && (
+            <>
+              <View style={styles.summaryConnector} />
+              <View style={styles.summaryRow}>
+                <View style={styles.summaryDotRed} />
+                <View style={styles.summaryInfo}>
+                  <Text style={styles.summaryLabel}>DESTINATION</Text>
+                  <Text style={styles.summaryValue} numberOfLines={2}>{destinationText}</Text>
+                </View>
+              </View>
+            </>
+          )}
         </View>
 
         {/* ── Payment CTAs ───────────────────────────────────────────────────── */}

@@ -22,13 +22,16 @@ export interface BookingAction {
  *   bookingId         — booking ID for GET /bookings/:bookingId (detail fetch)
  *   bookingVehicleId  — assignment ID for /chauffeur/:id/... action endpoints
  *   bookingStatus     — booking status so driver-home can restore ride state
+ *   tripType          — "ONE_WAY" | "HOURLY_RENTALS" for post-OTP branching
  */
 export function getActionForBooking(
   bookingId: string,
   bookingVehicleId: string,
   status: BookingStatus,
+  tripType?: string,
 ): BookingAction | null {
-  const base = { bookingId, bookingVehicleId, bookingStatus: status };
+  const isHourly = tripType === 'HOURLY_RENTALS';
+  const base = { bookingId, bookingVehicleId, bookingStatus: status, tripType: tripType ?? '' };
 
   switch (status) {
     case 'ASSIGNED':
@@ -49,7 +52,7 @@ export function getActionForBooking(
     case 'OTP_VERIFIED':
     case 'IN_PROGRESS':
       return {
-        buttonText: 'Go To Destination',
+        buttonText: isHourly ? 'View Hourly Ride' : 'Go To Destination',
         navigationTarget: '/(driver)/driver-home',
         params: base,
       };

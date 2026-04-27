@@ -69,10 +69,8 @@ function pickupWaypoint(waypoints: Waypoint[]): Waypoint {
     return wp;
 }
 
-function dropWaypoint(waypoints: Waypoint[]): Waypoint {
-    const wp = waypoints.find((w) => wpType(w) === 'DROP');
-    if (!wp) throw new Error('Booking has no DROP waypoint');
-    return wp;
+function dropWaypoint(waypoints: Waypoint[]): Waypoint | null {
+    return waypoints.find((w) => wpType(w) === 'DROP') ?? null;
 }
 
 function toCoord(wp: Waypoint): Coordinate {
@@ -105,7 +103,7 @@ export function mapBookingDetailToRide(
     });
 
     const pickup = pickupWaypoint(sorted);
-    const drop = dropWaypoint(sorted);
+    const drop = dropWaypoint(sorted); // null for HOURLY_RENTALS
 
     const stoppages: Stoppage[] = sorted
         .filter((w) => wpType(w) === 'STOP')
@@ -132,9 +130,9 @@ export function mapBookingDetailToRide(
         riderName: detail.metadata?.customerName ?? 'Unknown Rider',
         customerContact: detail.metadata?.customerContact ?? '',
         pickupText: pickup.address,
-        destinationText: drop.address,
+        destinationText: drop?.address ?? '',
         pickup: toCoord(pickup),
-        destination: toCoord(drop),
+        destination: drop ? toCoord(drop) : { latitude: 0, longitude: 0 },
         stoppages,
         fare: formatFare(detail.totalFare),
         totalFare: detail.totalFare ?? 0,
@@ -142,5 +140,9 @@ export function mapBookingDetailToRide(
         rawWaypoints,
         specialRemarks: detail.metadata?.specialRemarks || undefined,
         specialRequest: detail.specialRequest || undefined,
+        tripType: detail.tripType || undefined,
+        rideDate: detail.rideDate ?? null,
+        pickupTime: detail.pickupTime ?? null,
+        hourlyPackage: detail.hourlyPackage ?? undefined,
     };
 }

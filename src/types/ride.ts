@@ -1,5 +1,6 @@
 import { Coordinate } from '../components/MapViewContainer';
 import { RawWaypoint } from '../utils/waypointUtils';
+import { HourlyPackage } from './booking';
 
 // ─── Ride Status Machine ───────────────────────────────────────────────────────
 
@@ -71,4 +72,12 @@ export interface ActiveRide {
    * Consumed by useRoutePoints() in driver-home to drive map routing.
    */
   rawWaypoints: RawWaypoint[];
+  /** "ONE_WAY" | "HOURLY_RENTALS" — drives post-OTP flow branching */
+  tripType?: string;
+  /** Date portion of the ride schedule (YYYY-MM-DD) — used by hourly timer */
+  rideDate?: string | null;
+  /** Time portion of the ride schedule (HH:mm:ss) — used by hourly timer */
+  pickupTime?: string | null;
+  /** Present when tripType === 'HOURLY_RENTALS' */
+  hourlyPackage?: HourlyPackage;
 }

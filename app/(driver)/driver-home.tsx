@@ -90,6 +90,7 @@ export default function DriverHomeScreen() {
   const bookingId = params.bookingId as string | undefined;
   const bookingVehicleId = params.bookingVehicleId as string | undefined;
   const bookingStatus = params.bookingStatus as BookingStatus | undefined;
+  const tripType = params.tripType as string | undefined;
 
   const { startSync, stopSync, nextWaypoint } = useLocationSync(bookingVehicleId);
   const isPickupMode = Boolean(bookingId);
@@ -139,6 +140,23 @@ export default function DriverHomeScreen() {
       }
     }
   }, [bookingDetailRide]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // For hourly bookings re-entered at OTP_VERIFIED/IN_PROGRESS, redirect immediately
+  useEffect(() => {
+    const isHourly = (tripType ?? bookingDetailRide?.tripType) === 'HOURLY_RENTALS';
+    const isPostOtp = bookingStatus === 'OTP_VERIFIED' || bookingStatus === 'IN_PROGRESS';
+    if (isPickupMode && isHourly && isPostOtp && bookingId && bookingVehicleId) {
+      stopSync();
+      router.replace({
+        pathname: '/(driver)/hourly-ride',
+        params: {
+          bookingId,
+          bookingVehicleId,
+          riderName: bookingDetailRide?.riderName ?? '',
+        },
+      });
+    }
+  }, [bookingDetailRide, bookingStatus, tripType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch charges from API on mount
   useEffect(() => {
@@ -197,7 +215,19 @@ export default function DriverHomeScreen() {
     setOtpModalVisible(false);
     updateStatus('TRIP_STARTED');
     setRouteInfo(null);
-  }, [updateStatus]);
+
+    if ((tripType ?? ride?.tripType) === 'HOURLY_RENTALS') {
+      stopSync();
+      router.push({
+        pathname: '/(driver)/hourly-ride',
+        params: {
+          bookingId: bookingId ?? '',
+          bookingVehicleId: bookingVehicleId ?? '',
+          riderName: ride?.riderName ?? '',
+        },
+      });
+    }
+  }, [updateStatus, tripType, ride, bookingId, bookingVehicleId, stopSync, router]);
 
   const handleVerifyOtp = useCallback(async (otp: string) => {
     if (!ride?.bookingVehicleId) throw new Error('No active ride');

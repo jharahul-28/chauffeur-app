@@ -96,6 +96,12 @@ export interface LocationUpdateResponse {
   /** Next waypoint the driver should head to. Always present when a ride is active. */
   waypoint: NextWaypoint | null;
   distanceMeters: number;
+  /**
+   * Server-side ride start time for hourly rentals.
+   * Format: "YYYY-MM-DD HH:mm:ss" in the server's local timezone (treat as local).
+   * Present only when tripType === 'HOURLY_RENTALS' and ride has started.
+   */
+  rideStartTime?: string | null;
 }
 
 /** Sends the driver's current GPS coordinates to the backend. */

@@ -67,6 +67,8 @@ export interface SlideToConfirmProps {
   disabled?: boolean;
   /** 'primary' = gold gradient, 'danger' = red. Default: 'primary'. */
   variant?: SlideVariant;
+  /** Override the icon shown inside the thumb. Defaults to variant-specific icon. */
+  icon?: React.ComponentProps<typeof Ionicons>['name'];
   /** Accessible hint for screen readers. */
   accessibilityLabel?: string;
 }
@@ -101,6 +103,7 @@ export default function SlideToConfirm({
   loading = false,
   disabled = false,
   variant = 'primary',
+  icon,
   accessibilityLabel,
 }: SlideToConfirmProps) {
   // `trackWidth` is measured via onLayout; starts at 0 and is populated on
@@ -268,7 +271,7 @@ export default function SlideToConfirm({
           ) : (
             <Animated.View style={iconStyle}>
               <Ionicons
-                name={ICON_NAME[variant]}
+                name={icon ?? ICON_NAME[variant]}
                 size={22}
                 color={variant === 'danger' ? '#FF453A' : '#000'}
               />
