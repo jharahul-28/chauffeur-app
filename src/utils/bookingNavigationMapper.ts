@@ -64,6 +64,14 @@ export function getActionForBooking(
         params: base,
       };
 
+    case 'RIDE_END':
+      if (!bookingVehicleId) return null;
+      return {
+        buttonText: 'Payment',
+        navigationTarget: '/(driver)/pending-amount',
+        params: { bookingVehicleId, bookingId },
+      };
+
     case 'COMPLETED':
       return null;
 

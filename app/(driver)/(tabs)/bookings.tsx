@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -34,6 +34,7 @@ export default function BookingsScreen() {
 
   const [activeTab, setActiveTab] = useState<BookingTab>('current');
   const { bookings, isLoading, error, refetch } = useBookings(activeTab);
+  const isNavigating = useRef(false);
 
   // If the Past tab becomes hidden (user re-enters via tab bar) while it was
   // active, reset to Current to avoid showing a stale hidden-tab state.
@@ -65,12 +66,15 @@ export default function BookingsScreen() {
   );
 
   const handleBookingAction = (booking: Booking) => {
+    if (isNavigating.current) return;
     const action = getActionForBooking(booking.bookingId, booking.id, booking.status, booking.tripType);
     if (!action) return;
+    isNavigating.current = true;
     router.push({
       pathname: action.navigationTarget as never,
       params: action.params,
     });
+    setTimeout(() => { isNavigating.current = false; }, 1000);
   };
 
   const handlePastBookingPress = (booking: Booking) => {

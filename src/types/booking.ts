@@ -9,7 +9,8 @@ export type BookingStatus =
   | 'OTP_VERIFIED'
   | 'IN_PROGRESS'
   | 'WAITING'
-  | 'COMPLETED';
+  | 'COMPLETED'
+  | 'RIDE_END';
 
 // ─── Hourly package ───────────────────────────────────────────────────────────
 
