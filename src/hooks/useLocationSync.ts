@@ -1,89 +1,78 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { getCurrentLocation } from '../services/locationService';
-import { updateDriverLocation, NextWaypoint } from '../services/rideService';
-
-// ─── Constants ─────────────────────────────────────────────────────────────────
-
-const SYNC_INTERVAL_MS = 30_000;
-
-// ─── Hook ──────────────────────────────────────────────────────────────────────
+import * as Location from 'expo-location';
+import { useCallback, useEffect } from 'react';
+import { setActiveBookingVehicleId, removeActiveBookingVehicleId } from '../storage/tokenStorage';
+import { LOCATION_TASK_NAME } from '../services/locationTask';
 
 /**
- * Sends driver GPS location to the backend every 30 seconds unconditionally.
- *
- * Lifecycle: call startSync() when the trip begins and stopSync() when it ends
- * or the screen unmounts. The hook guarantees only one interval runs at a time.
+ * Manages background location tracking lifecycle.
+ * Uses expo-location background updates and expo-task-manager.
+ * 
+ * Note: Background tracking requires "Always" location permission.
  */
-export function useLocationSync(
-  bookingVehicleId: string | undefined,
-  onArrivedAtPickup?: () => void,
-): {
-  startSync: () => void;
-  stopSync: () => void;
-  /** Most recent next-waypoint from the location-update API. Updates every sync tick. */
-  nextWaypoint: NextWaypoint | null;
-} {
-  // Stable refs so the interval closure always reads the latest values
-  const bookingVehicleIdRef = useRef(bookingVehicleId);
-  bookingVehicleIdRef.current = bookingVehicleId;
-
-  const onArrivedAtPickupRef = useRef(onArrivedAtPickup);
-  onArrivedAtPickupRef.current = onArrivedAtPickup;
-
-  const [nextWaypoint, setNextWaypoint] = useState<NextWaypoint | null>(null);
-
-  const isRunningRef = useRef(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const sync = useCallback(async () => {
-    if (!isRunningRef.current) return;
-
-    const bvId = bookingVehicleIdRef.current;
-    if (!bvId) return;
-
-    const loc = await getCurrentLocation();
-    if (!loc) {
-      console.warn('[useLocationSync] Location unavailable, skipping this tick');
-      return;
-    }
-
-    const { latitude: lat, longitude: lng } = loc;
-
-    console.log('[useLocationSync] Location Sync Triggered', { bookingVehicleId: bvId, lat, lng });
+export function useLocationSync(bookingVehicleId: string | undefined) {
+  
+  const startSync = useCallback(async () => {
+    if (!bookingVehicleId) return;
 
     try {
-      const response = await updateDriverLocation(bvId, lat, lng);
-      if (response.waypoint) {
-        setNextWaypoint(response.waypoint);
+      // 1. Request Permissions
+      const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+      if (fgStatus !== 'granted') {
+        console.warn('[useLocationSync] Foreground location permission denied');
+        return;
       }
-      if (response.arrived && response.waypoint?.type === 'PICKUP') {
-        onArrivedAtPickupRef.current?.();
+
+      const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+      if (bgStatus !== 'granted') {
+        console.warn('[useLocationSync] Background location permission denied. Updates will only work in foreground.');
+        // We continue anyway, as it might still work in foreground or the user might grant it later
+      }
+
+      // 2. Persist ID for the background task to read from AsyncStorage
+      await setActiveBookingVehicleId(bookingVehicleId);
+
+      // 3. Start Background Updates
+      // We check if it's already running to avoid duplicate tasks
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+      if (isRunning) {
+        await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+      }
+
+      await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 30000, // 30 seconds
+        distanceInterval: 20, // 20 meters
+        // Android Specific: Shows a persistent notification to keep the app alive
+        foregroundService: {
+          notificationTitle: 'Trip Tracking Active',
+          notificationBody: 'Velvet is syncing your location for the active ride.',
+          notificationColor: '#FFC107',
+        },
+        pausesUpdatesAutomatically: false,
+      });
+
+      console.log('[useLocationSync] Background location tracking started for:', bookingVehicleId);
+    } catch (err) {
+      console.error('[useLocationSync] Failed to start background tracking:', err);
+    }
+  }, [bookingVehicleId]);
+
+  const stopSync = useCallback(async () => {
+    try {
+      // 1. Remove ID from storage
+      await removeActiveBookingVehicleId();
+
+      // 2. Stop Background Updates
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+      if (isRunning) {
+        await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+        console.log('[useLocationSync] Background location tracking stopped');
       }
     } catch (err) {
-      console.error('[useLocationSync] location update failed, will retry next cycle:', err);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const startSync = useCallback(() => {
-    if (isRunningRef.current) return; // guard against duplicate intervals
-
-    isRunningRef.current = true;
-
-    sync(); // fire immediately, then every 30s
-    intervalRef.current = setInterval(sync, SYNC_INTERVAL_MS);
-  }, [sync]);
-
-  const stopSync = useCallback(() => {
-    isRunningRef.current = false;
-
-    if (intervalRef.current !== null) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
+      console.error('[useLocationSync] Failed to stop background tracking:', err);
     }
   }, []);
 
-  // Cleanup on unmount regardless of whether stopSync was called explicitly
-  useEffect(() => () => stopSync(), [stopSync]);
-
-  return { startSync, stopSync, nextWaypoint };
+  // Return nextWaypoint as null for now, as it's handled in the task or should be moved to a global store
+  return { startSync, stopSync, nextWaypoint: null };
 }

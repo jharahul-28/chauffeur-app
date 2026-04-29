@@ -4,6 +4,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { onUnauthorized } from "@/src/services/apiClient";
 import { getAccessToken } from "@/src/storage/tokenStorage";
 import GlobalLoader from "@/src/components/GlobalLoader";
+import "@/src/services/locationTask"; // Register background task
 
 export default function RootLayout() {
   const router = useRouter();

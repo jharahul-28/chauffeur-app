@@ -59,3 +59,27 @@ export const removeChauffeurId = async () => {
         console.error("Unable to remove chauffeur id", error);
     }
 };
+
+export const getActiveBookingVehicleId = async (): Promise<string | null> => {
+    try {
+        return await AsyncStorage.getItem(STORAGE_KEYS.ACTIVE_BOOKING_VEHICLE_ID);
+    } catch (error) {
+        return null;
+    }
+};
+
+export const setActiveBookingVehicleId = async (id: string) => {
+    try {
+        await AsyncStorage.setItem(STORAGE_KEYS.ACTIVE_BOOKING_VEHICLE_ID, id);
+    } catch (error) {
+        console.error("Unable to store active booking vehicle id", error);
+    }
+};
+
+export const removeActiveBookingVehicleId = async () => {
+    try {
+        await AsyncStorage.removeItem(STORAGE_KEYS.ACTIVE_BOOKING_VEHICLE_ID);
+    } catch (error) {
+        console.error("Unable to remove active booking vehicle id", error);
+    }
+};
