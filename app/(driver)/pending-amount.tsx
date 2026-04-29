@@ -12,6 +12,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+
+import HeaderBackButton from '../../src/components/HeaderBackButton';
 import ChargeModal from '../../src/components/ChargeModal';
 import ChargesSummaryModal from '../../src/components/ChargesSummaryModal';
 import PaymentModal from '../../src/components/PaymentModal';
@@ -172,6 +174,11 @@ export default function PendingAmountScreen() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <View style={styles.screenHeader}>
+        <HeaderBackButton />
+      </View>
+
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 24 }]}
         showsVerticalScrollIndicator={false}
@@ -359,6 +366,13 @@ const styles = StyleSheet.create({
   },
 
   // Header
+  screenHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   iconSection: {
     alignItems: 'center',
     gap: 10,

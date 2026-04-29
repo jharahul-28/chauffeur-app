@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRawBookingDetail } from '../../src/hooks/useRawBookingDetail';
 import BookingInfoSection from '../../src/components/BookingInfoSection';
 import WaypointList from '../../src/components/WaypointList';
+import HeaderBackButton from '../../src/components/HeaderBackButton';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -88,9 +89,7 @@ export default function PastBookingDetailsScreen() {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBack} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
+        <HeaderBackButton />
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Past Booking</Text>
           {data.bookingReference ? (

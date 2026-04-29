@@ -109,10 +109,23 @@ export const updateDriverLocation = (
     bookingVehicleId: string,
     lat: number,
     lng: number,
-): Promise<LocationUpdateResponse> =>
-    apiClient
+): Promise<LocationUpdateResponse> => {
+    console.log(`[RideService] 📍 Sending Location: Lat ${lat}, Lng ${lng} for BV ID: ${bookingVehicleId}`);
+    return apiClient
         .post<LocationUpdateResponse>(`${base(bookingVehicleId)}/location-update`, {
             currentLatitude: lat,
             currentLongitude: lng,
         })
-        .then((res) => res.data);
+        .then((res) => {
+            console.log(`[RideService] ✅ Location Update Success: BV ID ${bookingVehicleId}`);
+            return res.data;
+        })
+        .catch((err) => {
+            const errorData = err.response?.data;
+            console.error(`[RideService] ❌ Location Update Failed: BV ID ${bookingVehicleId}`, {
+                message: err.message,
+                responseData: errorData
+            });
+            throw err;
+        });
+};

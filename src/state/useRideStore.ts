@@ -1,20 +1,51 @@
-import { useState, useCallback } from 'react';
+import { create } from 'zustand';
 import { ActiveRide, RideStatus } from '../types/ride';
+import { Charge as ExtraCharge } from '../types/charge';
 
-export function useRideStore() {
-  const [ride, setRide] = useState<ActiveRide | null>(null);
+// ─── Store ────────────────────────────────────────────────────────────────────
 
-  const initRide = useCallback((rideData: Omit<ActiveRide, 'status'>) => {
-    setRide({ ...rideData, status: 'GOING_TO_PICKUP' });
-  }, []);
-
-  const updateStatus = useCallback((status: RideStatus) => {
-    setRide((prev) => (prev ? { ...prev, status } : null));
-  }, []);
-
-  const clearRide = useCallback(() => {
-    setRide(null);
-  }, []);
-
-  return { ride, initRide, updateStatus, clearRide };
+interface RideState {
+  ride: ActiveRide | null;
+  extraCharges: ExtraCharge[];
+  initRide: (rideData: Omit<ActiveRide, 'status'>) => void;
+  updateStatus: (status: RideStatus) => void;
+  addExtraCharge: (charge: ExtraCharge) => void;
+  updateExtraCharge: (index: number, charge: ExtraCharge) => void;
+  clearRide: () => void;
 }
+
+export const useRideStore = create<RideState>((set) => ({
+  ride: null,
+  extraCharges: [],
+
+  initRide: (rideData) =>
+    set({
+      ride: { ...rideData, status: 'GOING_TO_PICKUP' },
+      extraCharges: [],
+    }),
+
+  updateStatus: (status) =>
+    set((state) => ({
+      ride: state.ride ? { ...state.ride, status } : null,
+    })),
+
+  addExtraCharge: (charge) => {
+    if (!charge.amount || charge.amount <= 0) return;
+    set((state) => ({
+      extraCharges: [...state.extraCharges, charge],
+    }));
+  },
+
+  updateExtraCharge: (index, charge) => {
+    if (!charge.amount || charge.amount <= 0) return;
+    set((state) => ({
+      extraCharges: state.extraCharges.map((c, i) => (i === index ? charge : c)),
+    }));
+  },
+
+  clearRide: () =>
+    set({
+      ride: null,
+      extraCharges: [],
+    }),
+}));

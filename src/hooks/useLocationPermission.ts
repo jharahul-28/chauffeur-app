@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { AppState, AppStateStatus } from 'react-native';
 
 export type LocationStatus = 'loading' | 'granted' | 'denied';
@@ -20,6 +21,10 @@ export function useLocationPermission(): UseLocationPermissionReturn {
     if (isAsking.current) return;
     isAsking.current = true;
     try {
+      // 1. Request Notifications (crucial for background tracking on Android 13+)
+      await Notifications.requestPermissionsAsync();
+
+      // 2. Request Location
       const { status: s } = await Location.requestForegroundPermissionsAsync();
       if (!isMounted.current) return;
       if (s === 'granted') setStatus('granted');

@@ -12,12 +12,12 @@ import {
   Platform,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import Svg, { Defs, LinearGradient as SvgGradient, Stop, Text as SvgText } from "react-native-svg";
 import { BlurView } from "expo-blur";
-import { useRouter } from "expo-router";
+import { Href, useRouter } from "expo-router";
 import { bgColors } from "@/src/constants/colors";
 import { generateOtp } from "@/src/services/authService";
 import { getErrorMessage } from "@/src/utils/apiErrorParser";
+import BrandLogo from "@/src/components/BrandLogo";
 
 export default function Index() {
   const router = useRouter();
@@ -41,8 +41,10 @@ export default function Index() {
     const formattedCountryCode = `+${countryCode}`;
     try {
       await generateOtp(formattedCountryCode, phoneNumber);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      router.push({ pathname: "/otp" as any, params: { countryCode: formattedCountryCode, phone: phoneNumber } });
+      router.push({ 
+        pathname: "/otp" as any, 
+        params: { countryCode: formattedCountryCode, phone: phoneNumber } 
+      });
     } catch (err) {
       const message = getErrorMessage(err, "Failed to send OTP. Please try again.");
       Alert.alert("Error", message);
@@ -63,30 +65,7 @@ export default function Index() {
         bounces={false}
       >
         {/* Brand Heading */}
-        <View style={styles.headingContainer}>
-          <Svg height="40" width="100%" viewBox="0 0 300 40">
-            <Defs>
-              <SvgGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                <Stop offset="0%" stopColor="#EDB96D" />
-                <Stop offset="100%" stopColor="#B5783C" />
-              </SvgGradient>
-            </Defs>
-
-            <SvgText
-              fill="url(#goldGradient)"
-              fontSize="28"
-              fontWeight="600"
-              x="50%"
-              y="28"
-              textAnchor="middle"
-              letterSpacing="4"
-            >
-              VELVET
-            </SvgText>
-          </Svg>
-
-          <Text style={styles.companySecondNameText}>EXPERIENCE</Text>
-        </View>
+        <BrandLogo />
 
         {/* Login Section */}
         <View style={styles.driverCredentialsInputContainer}>
@@ -183,18 +162,7 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
 
-  headingContainer: {
-    width: "100%",
-    alignItems: "center",
-    marginBottom: 40,
-  },
 
-  companySecondNameText: {
-    fontSize: 14,
-    color: "#AAAAAA",
-    letterSpacing: 2,
-    marginTop: 4,
-  },
 
   driverCredentialsInputContainer: {
     width: "100%",

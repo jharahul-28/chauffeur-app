@@ -9,7 +9,8 @@ import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { RideStatus, Stoppage } from '../types/ride';
+import { RideStatus, Stoppage, RideStatusEnum } from '../types/ride';
+import { themeColors, bgColors } from '../constants/colors';
 import WaitTimerDisplay from './WaitTimerDisplay';
 import ChargeIconButton from './ChargeIconButton';
 import SlideToConfirm from './SlideToConfirm';
@@ -120,7 +121,7 @@ const PickupDrawer = memo(function PickupDrawer({
   const bottomPad = Math.max(insets.bottom, 12);
   const initials = getInitials(riderName);
 
-  const isTripStarted = rideStatus === 'TRIP_STARTED';
+  const isTripStarted = rideStatus === RideStatusEnum.TRIP_STARTED;
 
   // Use live next-waypoint when available; fall back to pickup coord for pre-trip
   const mapsTarget: LatLng | null = nextWaypointCoord ?? pickupCoord ?? null;
@@ -178,14 +179,14 @@ const PickupDrawer = memo(function PickupDrawer({
 
   // ── Status label ────────────────────────────────────────────────────────────
   const STATUS_LABELS: Record<RideStatus, string> = {
-    GOING_TO_PICKUP: 'Going to Pickup',
-    ARRIVED_AT_PICKUP: 'Arrived at Pickup',
-    OTP_PENDING: 'Verifying OTP...',
-    TRIP_STARTED: 'Trip in Progress',
-    TRIP_COMPLETED: 'Trip Completed',
+    [RideStatusEnum.GOING_TO_PICKUP]: 'Going to Pickup',
+    [RideStatusEnum.ARRIVED_AT_PICKUP]: 'Arrived at Pickup',
+    [RideStatusEnum.OTP_PENDING]: 'Verifying OTP...',
+    [RideStatusEnum.TRIP_STARTED]: 'Trip in Progress',
+    [RideStatusEnum.TRIP_COMPLETED]: 'Trip Completed',
   };
   const statusLabel = isWaiting ? 'Waiting...' : STATUS_LABELS[rideStatus];
-  const statusColor = isWaiting ? '#FF9F0A' : isTripStarted ? '#30D158' : '#EDB96D';
+  const statusColor = isWaiting ? themeColors.warning : isTripStarted ? themeColors.success : themeColors.goldAccent;
 
   return (
     <Animated.View
@@ -285,7 +286,7 @@ const PickupDrawer = memo(function PickupDrawer({
             )}
           </View>
         </>
-      ) : rideStatus === 'GOING_TO_PICKUP' ? (
+      ) : rideStatus === RideStatusEnum.GOING_TO_PICKUP ? (
         <View style={styles.ctaRow}>
           <View style={styles.ctaFlex}>
             <SlideToConfirm

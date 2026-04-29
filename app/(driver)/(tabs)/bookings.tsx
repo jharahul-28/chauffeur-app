@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
+import { BackHandler, Alert } from 'react-native';
 
 import AppHeader from '@/src/components/AppHeader';
 import BookingTabs from '@/src/components/BookingTabs';
@@ -47,6 +48,19 @@ export default function BookingsScreen() {
   useFocusEffect(
     useCallback(() => {
       refetch();
+
+      const onBackPress = () => {
+        // If we are on the Home screen (bookings), back press should probably
+        // prompt to exit or just do nothing, but definitely NOT go back to Login.
+        Alert.alert('Exit App', 'Are you sure you want to exit?', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Exit', onPress: () => BackHandler.exitApp() },
+        ]);
+        return true; // prevent default behavior
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => subscription.remove();
     }, [refetch])
   );
 
@@ -71,7 +85,7 @@ export default function BookingsScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#111111" />
 
       {/* Standardised header — VELVET centre, hamburger right */}
-      <AppHeader />
+      <AppHeader showBack={showPastTab} />
 
       {/* Tab control — Past tab visible only when showPastTab is true */}
       <BookingTabs

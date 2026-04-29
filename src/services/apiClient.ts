@@ -1,4 +1,5 @@
 import axios from "axios";
+import axiosRetry from "axios-retry";
 import {
     getAccessToken,
     setAccessToken,
@@ -21,11 +22,26 @@ export const onUnauthorized = (cb: UnauthorizedListener) => {
     return () => unauthorizedListeners.delete(cb);
 };
 
+declare module 'axios' {
+    export interface InternalAxiosRequestConfig {
+        _tracked?: boolean;
+    }
+}
+
 const apiClient = axios.create({
     baseURL: 'https://stage-api.velvetexperience.com',
     headers: {
         "Content-Type": "application/json",
     },
+});
+
+// Implement network retry for idempotent requests
+axiosRetry(apiClient, { 
+    retries: 3, 
+    retryDelay: axiosRetry.exponentialDelay,
+    retryCondition: (error) => {
+        return axiosRetry.isNetworkOrIdempotentRequestError(error);
+    }
 });
 
 apiClient.interceptors.request.use(
@@ -38,54 +54,57 @@ apiClient.interceptors.request.use(
 
         const shouldTrack = !LOADER_SKIP_PATTERNS.some((p) => config.url?.includes(p));
         if (shouldTrack) incrementLoader();
-        (config as any)._tracked = shouldTrack;
+        config._tracked = shouldTrack;
 
-        // ── Request log ──────────────────────────────────────────────────────
-        console.log('[API] ➡️  Request', {
-            method: config.method?.toUpperCase(),
-            url: `${config.baseURL}${config.url}`,
-            params: config.params,
-            headers: {
-                'auth-key': token ? `${token.slice(0, 12)}...` : 'MISSING',
-                'Content-Type': config.headers['Content-Type'],
-            },
-        });
+        if (__DEV__) {
+            console.log('[API] ➡️  Request', {
+                method: config.method?.toUpperCase(),
+                url: `${config.baseURL}${config.url}`,
+                params: config.params,
+                headers: {
+                    'auth-key': token ? `${token.slice(0, 12)}...` : 'MISSING',
+                    'Content-Type': config.headers['Content-Type'],
+                },
+            });
+        }
 
         return config;
     },
     (error) => {
-        // Request setup failed before it left the device — still decrement if tracked.
-        if ((error.config as any)?._tracked) decrementLoader();
+        if (error.config?._tracked) decrementLoader();
         return Promise.reject(error);
     }
 );
 
 apiClient.interceptors.response.use(
     (response) => {
-        if ((response.config as any)._tracked) decrementLoader();
-        // ── Response log ─────────────────────────────────────────────────────
-        console.log('[API] ✅ Response', {
-            status: response.status,
-            url: response.config.url,
-            dataType: Array.isArray(response.data) ? 'array' : typeof response.data,
-            dataKeys: response.data && typeof response.data === 'object'
-                ? Object.keys(response.data)
-                : 'N/A',
-            // Log full raw data so we can see the exact field names from API
-            rawData: response.data,
-        });
+        if (response.config?._tracked) decrementLoader();
+        
+        if (__DEV__) {
+            console.log('[API] ✅ Response', {
+                status: response.status,
+                url: response.config.url,
+                dataType: Array.isArray(response.data) ? 'array' : typeof response.data,
+                dataKeys: response.data && typeof response.data === 'object'
+                    ? Object.keys(response.data)
+                    : 'N/A',
+                // Log full raw data only in DEV
+                rawData: response.data,
+            });
+        }
         return response;
     },
     async (error) => {
-        // ── Error log ────────────────────────────────────────────────────────
-        console.error('[API] ❌ Error', {
-            url: error.config?.url,
-            status: error.response?.status,
-            message: error.message,
-            responseData: error.response?.data,
-        });
+        if (__DEV__) {
+            console.error('[API] ❌ Error', {
+                url: error.config?.url,
+                status: error.response?.status,
+                message: error.message,
+                responseData: error.response?.data,
+            });
+        }
 
-        if ((error.config as any)?._tracked) decrementLoader();
+        if (error.config?._tracked) decrementLoader();
 
         if (error.response?.status === 401) {
             await removeAccessToken();

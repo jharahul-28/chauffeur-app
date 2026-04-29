@@ -12,19 +12,12 @@ import {
     Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-// import { LinearGradient } from 'expo-linear-gradient';
-import Svg, {
-    Defs,
-    LinearGradient as SvgGradient,
-    Stop,
-    Text as SvgText,
-} from 'react-native-svg';
 import { bgColors } from '@/src/constants/colors';
 import OtpInput from '@/src/components/OtpInput';
 import { generateOtp, verifyOtp } from '@/src/services/authService';
 import GradientButton from '@/src/components/GradientButton';
-import { BlurView } from 'expo-blur';
 import { getErrorMessage } from '@/src/utils/apiErrorParser';
+import BrandLogo from '@/src/components/BrandLogo';
 
 export default function OtpScreen() {
     const { countryCode, phone } = useLocalSearchParams<{
@@ -88,28 +81,7 @@ export default function OtpScreen() {
                 bounces={false}
             >
                 {/* Brand Heading */}
-                <View style={styles.headingContainer}>
-                    <Svg height="40" width="100%" viewBox="0 0 300 40">
-                        <Defs>
-                            <SvgGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                <Stop offset="0%" stopColor="#EDB96D" />
-                                <Stop offset="100%" stopColor="#B5783C" />
-                            </SvgGradient>
-                        </Defs>
-                        <SvgText
-                            fill="url(#goldGradient)"
-                            fontSize="28"
-                            fontWeight="600"
-                            x="50%"
-                            y="28"
-                            textAnchor="middle"
-                            letterSpacing="4"
-                        >
-                            VELVET
-                        </SvgText>
-                    </Svg>
-                    <Text style={styles.companySecondNameText}>EXPERIENCE</Text>
-                </View>
+                <BrandLogo />
 
                 {/* OTP Section */}
                 <View style={styles.otpSection}>
@@ -160,17 +132,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 24,
         paddingVertical: 40,
     },
-    headingContainer: {
-        width: '100%',
-        alignItems: 'center',
-        marginBottom: 40,
-    },
-    companySecondNameText: {
-        fontSize: 14,
-        color: '#AAAAAA',
-        letterSpacing: 2,
-        marginTop: 4,
-    },
+
     otpSection: {
         width: '100%',
         marginBottom: 40,

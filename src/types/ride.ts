@@ -10,12 +10,15 @@ import { HourlyPackage } from './booking';
  * Transitions:
  *   GOING_TO_PICKUP → ARRIVED_AT_PICKUP → OTP_PENDING → TRIP_STARTED → TRIP_COMPLETED
  */
-export type RideStatus =
-  | 'GOING_TO_PICKUP'
-  | 'ARRIVED_AT_PICKUP'
-  | 'OTP_PENDING'
-  | 'TRIP_STARTED'
-  | 'TRIP_COMPLETED';
+export enum RideStatusEnum {
+  GOING_TO_PICKUP = 'GOING_TO_PICKUP',
+  ARRIVED_AT_PICKUP = 'ARRIVED_AT_PICKUP',
+  OTP_PENDING = 'OTP_PENDING',
+  TRIP_STARTED = 'TRIP_STARTED',
+  TRIP_COMPLETED = 'TRIP_COMPLETED',
+}
+
+export type RideStatus = RideStatusEnum | keyof typeof RideStatusEnum;
 
 // ─── Stoppage ─────────────────────────────────────────────────────────────────
 

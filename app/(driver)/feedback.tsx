@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import RatingStars from '../../src/components/RatingStars';
+import HeaderBackButton from '../../src/components/HeaderBackButton';
 import { FeedbackPayload } from '../../src/types/feedback';
 
 // ─── Screen params ────────────────────────────────────────────────────────────
@@ -117,7 +118,10 @@ export default function FeedbackScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* ── Header ─────────────────────────────────────────────────────── */}
-        <Text style={styles.screenTitle}>Feedback</Text>
+        <View style={styles.headerRow}>
+          <HeaderBackButton />
+          <Text style={styles.screenTitle}>Feedback</Text>
+        </View>
 
         {/* ── Avatar + Name ──────────────────────────────────────────────── */}
         <View style={styles.avatarSection}>
@@ -196,11 +200,16 @@ const styles = StyleSheet.create({
   scroll: {
     paddingHorizontal: 24,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 28,
+  },
   screenTitle: {
     color: '#FFFFFF',
     fontSize: 28,
     fontWeight: '700',
-    marginBottom: 28,
     letterSpacing: 0.2,
   },
   avatarSection: {

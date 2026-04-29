@@ -10,6 +10,7 @@ import Svg, {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import RightDrawer from './RightDrawer';
+import HeaderBackButton from './HeaderBackButton';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -37,17 +38,9 @@ export default function AppHeader({ showBack = false }: AppHeaderProps) {
     <>
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         {/* Left slot */}
-        {showBack ? (
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.iconButton}
-            hitSlop={8}
-          >
-            <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
-          </Pressable>
-        ) : (
-          <View style={styles.iconPlaceholder} />
-        )}
+        <View style={styles.leftSlot}>
+          {showBack ? <HeaderBackButton /> : <View style={styles.iconPlaceholder} />}
+        </View>
 
         {/* Centre: VELVET brand */}
         <Svg height="26" width="108" viewBox="0 0 108 26">
@@ -108,5 +101,11 @@ const styles = StyleSheet.create({
   iconPlaceholder: {
     width: 36,
     height: 36,
+  },
+  leftSlot: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

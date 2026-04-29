@@ -18,6 +18,7 @@ import DistanceDisplay from '../../src/components/DistanceDisplay';
 import ChargeModal from '../../src/components/ChargeModal';
 import ChargesSummaryModal from '../../src/components/ChargesSummaryModal';
 import SlideToConfirm from '../../src/components/SlideToConfirm';
+import HeaderBackButton from '../../src/components/HeaderBackButton';
 import { useHourlyTimer } from '../../src/hooks/useHourlyTimer';
 import { useHourlyLocationSync } from '../../src/hooks/useHourlyLocationSync';
 import { useBookingDetail } from '../../src/hooks/useBookingDetail';
@@ -164,9 +165,7 @@ export default function HourlyRideScreen() {
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
-        </Pressable>
+        <HeaderBackButton />
 
         <View style={styles.headerLabel}>
           <Text style={styles.headerTitle}>Hourly Rental</Text>

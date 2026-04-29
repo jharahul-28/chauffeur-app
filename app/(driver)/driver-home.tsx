@@ -8,10 +8,12 @@ import {
   Pressable,
   TouchableOpacity,
   Alert,
+  Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { bgColors, themeColors } from '../../src/constants/colors';
 
 import MapViewContainer from '../../src/components/MapViewContainer';
 import RideInfoPanel from '../../src/components/RideInfoPanel';
@@ -139,7 +141,7 @@ export default function DriverHomeScreen() {
         }
       }
     }
-  }, [bookingDetailRide]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isPickupMode, bookingDetailRide, ride, bookingVehicleId, bookingStatus, initRide, updateStatus, startWaiting]);
 
   // For hourly bookings re-entered at OTP_VERIFIED/IN_PROGRESS, redirect immediately
   useEffect(() => {
@@ -156,26 +158,28 @@ export default function DriverHomeScreen() {
         },
       });
     }
-  }, [bookingDetailRide, bookingStatus, tripType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bookingDetailRide, bookingStatus, tripType, isPickupMode, bookingId, bookingVehicleId, stopSync, router]);
 
   // Fetch charges from API on mount
   useEffect(() => {
     if (bookingVehicleId) fetchCharges();
-  }, [bookingVehicleId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bookingVehicleId, fetchCharges]);
 
   // Location sync lifecycle
   useEffect(() => {
     if (!ride?.bookingVehicleId) return;
     startSync();
-    return () => stopSync();
-  }, [ride?.bookingVehicleId]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => {
+      stopSync();
+    };
+  }, [ride?.bookingVehicleId, startSync, stopSync]);
 
   // Clear ride on unmount
   useEffect(() => {
     return () => {
       if (isPickupMode) clearRide();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isPickupMode, clearRide]);
 
   // ── Route info ────────────────────────────────────────────────────────────
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
@@ -273,7 +277,6 @@ export default function DriverHomeScreen() {
       console.error('[driver-home] endTrip failed:', err);
       Alert.alert('Failed to End Trip', getErrorMessage(err, 'Something went wrong. Please try again.'));
       setIsEndingTrip(false);
-      // SlideToConfirm auto-resets when loading flips false via its useEffect
     }
   }, [ride, isEndingTrip, isWaiting, stopWaiting, resetWaitTimer, updateStatus, clearRide, router]);
 
@@ -345,10 +348,6 @@ export default function DriverHomeScreen() {
     setChargeModalVisible(true);
   }, []);
 
-  /**
-   * Build the updated charges array, then PUT to backend and re-fetch.
-   * UI state is only updated after API confirmation.
-   */
   const handleChargeSubmit = useCallback(async (charge: Charge) => {
     const updatedCharges = editingChargeIndex !== null
       ? charges.map((c, i) => (i === editingChargeIndex ? charge : c))
@@ -375,6 +374,9 @@ export default function DriverHomeScreen() {
           Please enable location permissions in your device settings to use
           the driver app.
         </Text>
+        <TouchableOpacity style={styles.retryButton} onPress={() => Linking.openSettings()}>
+          <Text style={styles.retryText}>Open Settings</Text>
+        </TouchableOpacity>
       </View>
     );
   }
