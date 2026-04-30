@@ -122,7 +122,7 @@ export default function DriverHomeScreen() {
     refetchBooking();
   }, [updateStatus, refetchBooking]);
 
-  const { startSync, stopSync, nextWaypoint } = useLocationSync(bookingVehicleId, {
+  const { startSync, stopSync, nextWaypoint, sendLocationUpdate } = useLocationSync(bookingVehicleId, {
     onArrived: handleBackgroundArrival,
   });
   const isPickupMode = Boolean(bookingId);
@@ -344,6 +344,7 @@ export default function DriverHomeScreen() {
             try {
               logWaitEvent('WAIT_START', ride.id);
               const data = await postWaiting(ride.bookingVehicleId);
+              sendLocationUpdate();
               startWaiting(data.totalWaitingSeconds);
             } catch (err) {
               console.error('[driver-home] postWaiting failed:', err);
@@ -353,7 +354,7 @@ export default function DriverHomeScreen() {
         },
       ],
     });
-  }, [ride, startWaiting, showAlert]);
+  }, [ride, startWaiting, showAlert, sendLocationUpdate]);
 
   const handleResumeTrip = useCallback(() => {
     showAlert({
@@ -369,6 +370,7 @@ export default function DriverHomeScreen() {
             try {
               logWaitEvent('WAIT_RESUME', ride.id);
               await postContinue(ride.bookingVehicleId);
+              sendLocationUpdate();
               stopWaiting();
             } catch (err) {
               console.error('[driver-home] postContinue failed:', err);
@@ -378,7 +380,7 @@ export default function DriverHomeScreen() {
         },
       ],
     });
-  }, [ride, stopWaiting, showAlert]);
+  }, [ride, stopWaiting, showAlert, sendLocationUpdate]);
 
   // ── Extra charge handlers ─────────────────────────────────────────────────
 
@@ -448,7 +450,7 @@ export default function DriverHomeScreen() {
         <Text style={styles.permissionIcon}>⚠️</Text>
         <Text style={styles.permissionTitle}>Failed to load booking</Text>
         <Text style={styles.permissionBody}>{detailError}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.retryButton} onPress={() => router.replace('/(driver)/(tabs)/bookings')}>
           <Text style={styles.retryText}>Go Back</Text>
         </TouchableOpacity>
       </View>
@@ -472,7 +474,7 @@ export default function DriverHomeScreen() {
       <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
         {isPickupMode ? (
           <View style={styles.pickupHeader}>
-            <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <Pressable style={styles.backButton} onPress={() => router.replace('/(driver)/(tabs)/bookings')}>
               <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
             </Pressable>
             <View style={styles.pickupHeaderLabel}>

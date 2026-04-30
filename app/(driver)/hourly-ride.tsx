@@ -28,6 +28,7 @@ import { Charge } from '../../src/types/charge';
 import { HourlyPackage } from '../../src/types/booking';
 import { useAlert } from '../../src/context/AlertContext';
 import CallButton from '../../src/components/CallButton';
+import { useLocationStore } from '../../src/state/useLocationStore';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -61,7 +62,13 @@ export default function HourlyRideScreen() {
   }, [bookingVehicleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Location sync — starts on mount, stopped only on end-ride ─────────────
-  const { rideStartTime, sendFinalAndStop } = useHourlyLocationSync(bookingVehicleId);
+  const { rideStartTime: syncedRideStartTime, sendFinalAndStop } = useHourlyLocationSync(bookingVehicleId);
+
+  // Seed timer immediately from the store (populated during the pre-ride sync in
+  // driver-home) so the countdown shows at once without waiting for the first
+  // hourly-ride API tick. The synced value takes over as soon as it arrives.
+  const storedRideStartTime = useLocationStore((s) => s.rideStartTime);
+  const rideStartTime = syncedRideStartTime ?? storedRideStartTime;
 
   // Pull hourly fields from the detail response
   const detail = ride as (typeof ride & { hourlyPackage?: HourlyPackage }) | null;
@@ -154,7 +161,7 @@ export default function HourlyRideScreen() {
         <Text style={styles.errorIcon}>⚠️</Text>
         <Text style={styles.errorTitle}>Failed to load ride</Text>
         <Text style={styles.errorBody}>{error ?? 'Unknown error'}</Text>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+        <Pressable style={styles.backBtn} onPress={() => router.replace('/(driver)/(tabs)/bookings')}>
           <Text style={styles.backBtnText}>Go Back</Text>
         </Pressable>
       </View>
@@ -169,7 +176,7 @@ export default function HourlyRideScreen() {
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <HeaderBackButton />
+        <HeaderBackButton onPress={() => router.replace('/(driver)/(tabs)/bookings')} />
 
         <View style={styles.headerLabel}>
           <Text style={styles.headerTitle}>Hourly Rental</Text>

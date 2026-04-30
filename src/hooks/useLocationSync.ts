@@ -136,7 +136,24 @@ export function useLocationSync(bookingVehicleId: string | undefined, options?: 
     }
   }, []);
 
+  const sendLocationUpdate = useCallback(async () => {
+    if (!bookingVehicleId) return;
+    try {
+      const loc = await getCurrentLocation();
+      if (!loc) return;
+      const resp = await updateDriverLocation(bookingVehicleId, loc.latitude, loc.longitude);
+      useLocationStore.getState().setSyncResponse({
+        waypoint: resp.waypoint,
+        distanceMeters: resp.distanceMeters,
+        rideStartTime: resp.rideStartTime,
+        arrived: resp.arrived ?? false,
+      });
+    } catch (err) {
+      console.warn('[useLocationSync] sendLocationUpdate failed:', err);
+    }
+  }, [bookingVehicleId]);
+
   const nextWaypoint = useLocationStore((state) => state.nextWaypoint);
 
-  return { startSync, stopSync, nextWaypoint };
+  return { startSync, stopSync, nextWaypoint, sendLocationUpdate };
 }

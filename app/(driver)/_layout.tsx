@@ -16,7 +16,16 @@ export default function DriverLayout() {
             headerShown: false,
             animation: 'fade',
           }}
-        />
+        >
+          <Stack.Screen
+            name="driver-home"
+            options={{ gestureEnabled: false }}
+          />
+          <Stack.Screen
+            name="hourly-ride"
+            options={{ gestureEnabled: false }}
+          />
+        </Stack>
       </PermissionGate>
     </ErrorBoundary>
   );
