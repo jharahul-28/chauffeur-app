@@ -19,6 +19,7 @@ import { Booking } from '@/src/types/booking';
 import { BookingTab } from '@/src/utils/bookingFilter';
 import { useBookings } from '@/src/hooks/useBookings';
 import { getActionForBooking } from '@/src/utils/bookingNavigationMapper';
+import { useRideStore } from '@/src/state/useRideStore';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -69,6 +70,10 @@ export default function BookingsScreen() {
     if (isNavigating.current) return;
     const action = getActionForBooking(booking.bookingId, booking.id, booking.status, booking.tripType);
     if (!action) return;
+    
+    // Clear old ride state before starting/resuming a new one
+    useRideStore.getState().clearRide();
+    
     isNavigating.current = true;
     router.push({
       pathname: action.navigationTarget as never,

@@ -1,11 +1,16 @@
 import * as Location from 'expo-location';
 import { useCallback, useEffect } from 'react';
 import { DeviceEventEmitter } from 'react-native';
-import { setActiveBookingVehicleId, removeActiveBookingVehicleId, getActiveBookingVehicleId } from '../storage/tokenStorage';
+import { setActiveBookingVehicleId, removeActiveBookingVehicleId, getActiveBookingVehicleId, getAccessToken } from '../storage/tokenStorage';
 import { LOCATION_TASK_NAME } from '../services/locationTask';
 import { useLocationStore } from '../state/useLocationStore';
 import { getCurrentLocation } from '../services/locationService';
 import { updateDriverLocation } from '../services/rideService';
+
+interface UseLocationSyncOptions {
+  /** Called when the backend reports arrival at the current waypoint. */
+  onArrived?: () => void;
+}
 
 /**
  * Manages background location tracking lifecycle.
@@ -13,19 +18,24 @@ import { updateDriverLocation } from '../services/rideService';
  * 
  * Note: Background tracking requires "Always" location permission.
  */
-export function useLocationSync(bookingVehicleId: string | undefined) {
+export function useLocationSync(bookingVehicleId: string | undefined, options?: UseLocationSyncOptions) {
   const setSyncResponse = useLocationStore((state) => state.setSyncResponse);
 
   // Listen for native events from the background task (since Zustand stores aren't
   // shared between main JS and background task JS contexts on Android).
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('LOCATION_SYNC_UPDATE', (data) => {
-      console.log('[useLocationSync] 📬 Received Native Update:', data.waypoint?.type);
+      console.log('[useLocationSync] 📬 Received Native Update:', data.waypoint?.type, 'arrived:', data.arrived);
       setSyncResponse(data);
+
+      // Fire the onArrived callback when backend signals arrival
+      if (data.arrived && options?.onArrived) {
+        options.onArrived();
+      }
     });
     return () => sub.remove();
-  }, [setSyncResponse]);
-  
+  }, [setSyncResponse, options?.onArrived]);
+
   const startSync = useCallback(async () => {
     if (!bookingVehicleId) return;
 
@@ -78,21 +88,34 @@ export function useLocationSync(bookingVehicleId: string | undefined) {
       console.log('[useLocationSync] 🚀 Native Background Tracking STARTED for BV ID:', bookingVehicleId);
 
       // 4. Immediate first tick so the Map gets data right away
+      //    Only if we have a valid access token (prevents 401 during login)
       (async () => {
+        const token = await getAccessToken();
+        if (!token) {
+          console.log('[useLocationSync] No access token, skipping initial sync tick.');
+          return;
+        }
         const loc = await getCurrentLocation();
         if (loc) {
           const resp = await updateDriverLocation(bookingVehicleId, loc.latitude, loc.longitude);
-          useLocationStore.getState().setSyncResponse({
+          const syncData = {
             waypoint: resp.waypoint,
             distanceMeters: resp.distanceMeters,
             rideStartTime: resp.rideStartTime,
-          });
+            arrived: resp.arrived ?? false,
+          };
+          useLocationStore.getState().setSyncResponse(syncData);
+
+          // Fire arrival callback on initial tick too
+          if (resp.arrived && options?.onArrived) {
+            options.onArrived();
+          }
         }
       })();
     } catch (err) {
       console.error('[useLocationSync] Failed to start background tracking:', err);
     }
-  }, [bookingVehicleId]);
+  }, [bookingVehicleId, options?.onArrived]);
 
   const stopSync = useCallback(async () => {
     try {

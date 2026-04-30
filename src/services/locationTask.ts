@@ -1,7 +1,7 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import { updateDriverLocation } from './rideService';
-import { getActiveBookingVehicleId } from '../storage/tokenStorage';
+import { getActiveBookingVehicleId, getAccessToken, removeActiveBookingVehicleId } from '../storage/tokenStorage';
 import { useLocationStore } from '../state/useLocationStore';
 import { DeviceEventEmitter } from 'react-native';
 
@@ -34,6 +34,13 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
       const { latitude, longitude } = latestLocation.coords;
       
       try {
+        // Check for valid access token before making API call
+        const token = await getAccessToken();
+        if (!token) {
+          console.log('[LocationTask] No access token found, skipping sync.');
+          return;
+        }
+
         const bvId = await getActiveBookingVehicleId();
         if (bvId) {
           console.log('[LocationTask] Syncing background location:', { bvId, latitude, longitude });
@@ -44,6 +51,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
             waypoint: response.waypoint,
             distanceMeters: response.distanceMeters,
             rideStartTime: response.rideStartTime,
+            arrived: response.arrived ?? false,
           };
           
           useLocationStore.getState().setSyncResponse(syncData);
@@ -54,8 +62,20 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           // but we'll let the hook handle that to avoid race conditions.
           console.log('[LocationTask] No active booking vehicle ID found in storage, skipping sync.');
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('[LocationTask] Failed to sync background location:', err);
+        
+        // If server says ride has ended, stop the task immediately to avoid stale pings
+        const errorMsg = err.response?.data?.message || '';
+        if (err.response?.status === 400 && errorMsg.includes('RIDE_END')) {
+          console.log('[LocationTask] 🛑 Ride ended on server. Cleaning up background task.');
+          await removeActiveBookingVehicleId();
+          try {
+            await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+          } catch (stopErr) {
+            console.warn('[LocationTask] Failed to stop task:', stopErr);
+          }
+        }
       }
     }
   }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchBookingDetail, mapBookingDetailToRide } from '../services/bookingService';
 import { ActiveRide } from '../types/ride';
 
@@ -9,6 +9,8 @@ interface UseBookingDetailState {
     ride: RideDetailData | null;
     isLoading: boolean;
     error: string | null;
+    /** Re-fetch the booking detail from the server. */
+    refetch: () => void;
 }
 
 /**
@@ -19,6 +21,11 @@ export function useBookingDetail(bookingId: string | undefined): UseBookingDetai
     const [ride, setRide] = useState<RideDetailData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [refreshKey, setRefreshKey] = useState(0);
+
+    const refetch = useCallback(() => {
+        setRefreshKey((k) => k + 1);
+    }, []);
 
     useEffect(() => {
         if (!bookingId) {
@@ -51,7 +58,7 @@ export function useBookingDetail(bookingId: string | undefined): UseBookingDetai
         load();
 
         return () => { cancelled = true; };
-    }, [bookingId]);
+    }, [bookingId, refreshKey]);
 
-    return { ride, isLoading, error };
+    return { ride, isLoading, error, refetch };
 }

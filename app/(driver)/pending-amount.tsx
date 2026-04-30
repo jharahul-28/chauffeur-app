@@ -132,7 +132,11 @@ export default function PendingAmountScreen() {
     setPaymentModalVisible(false);
     try {
       await postCompletePayment(bookingVehicleId, { paymentStatus: 'PAID', amount });
-      router.replace('/(driver)/(tabs)/bookings');
+      
+      // Delay navigation slightly to let modals/alerts finish dismissing on Android
+      setTimeout(() => {
+        router.replace('/(driver)/(tabs)/bookings');
+      }, 100);
     } catch (err) {
       console.error('[pending-amount] completePayment (PAID) failed:', err);
       const message = getErrorMessage(err, 'Failed to record payment. Please try again.');
@@ -158,7 +162,11 @@ export default function PendingAmountScreen() {
             setIsSubmittingPayment(true);
             try {
               await postCompletePayment(bookingVehicleId, { paymentStatus: 'UNPAID' });
-              router.replace('/(driver)/(tabs)/bookings');
+              
+              // Delay navigation slightly to let the Alert finish its closing animation
+              setTimeout(() => {
+                router.replace('/(driver)/(tabs)/bookings');
+              }, 100);
             } catch (err) {
               console.error('[pending-amount] completePayment (UNPAID) failed:', err);
               const message = getErrorMessage(err, 'Failed to record payment. Please try again.');

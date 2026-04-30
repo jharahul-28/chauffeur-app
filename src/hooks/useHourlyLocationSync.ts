@@ -82,6 +82,7 @@ export function useHourlyLocationSync(
           waypoint: response.waypoint,
           distanceMeters: response.distanceMeters,
           rideStartTime: response.rideStartTime,
+          arrived: response.arrived ?? false,
         });
       }
     } catch (err) {

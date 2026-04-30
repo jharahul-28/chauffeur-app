@@ -18,10 +18,12 @@ export const postDriverOnTheWay = (bookingVehicleId: string): Promise<void> =>
     });
 
 /** Called when the driver taps "Arrived at Pickup". */
-export const postArrived = (bookingVehicleId: string): Promise<void> =>
-    apiClient.post(`${base(bookingVehicleId)}/arrived`).then(() => {
+export const postArrived = (bookingVehicleId: string): Promise<void> => {
+    console.log(`[rideService] 🚩 Posting Arrived for BV ID: ${bookingVehicleId}`);
+    return apiClient.post(`${base(bookingVehicleId)}/arrived`).then(() => {
         console.log('[rideService] arrived ✓', bookingVehicleId);
     });
+};
 
 /**
  * Called when the driver submits the OTP modal.

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -94,18 +94,37 @@ export default function DriverHomeScreen() {
   const bookingStatus = params.bookingStatus as BookingStatus | undefined;
   const tripType = params.tripType as string | undefined;
 
-  const { startSync, stopSync, nextWaypoint } = useLocationSync(bookingVehicleId);
-  const isPickupMode = Boolean(bookingId);
-
   // ── Booking detail fetch ──────────────────────────────────────────────────
   const {
     ride: bookingDetailRide,
     isLoading: isDetailLoading,
     error: detailError,
+    refetch: refetchBooking,
   } = useBookingDetail(bookingId);
 
   // ── Ride state machine ────────────────────────────────────────────────────
   const { ride, initRide, updateStatus, clearRide } = useRideStore();
+
+  // ── Waypoint arrival handler (called by background sync) ───────────────
+  const handleBackgroundArrival = useCallback(() => {
+    console.log('[driver-home] 🎯 Background arrival detected!');
+    // Only auto-transition if we're still in GOING_TO_PICKUP
+    const currentRide = useRideStore.getState().ride;
+    if (currentRide && currentRide.status === 'GOING_TO_PICKUP') {
+      updateStatus('ARRIVED_AT_PICKUP');
+      // Fire the API call too
+      postArrived(currentRide.bookingVehicleId).catch((err) =>
+        console.error('[driver-home] background postArrived failed:', err)
+      );
+    }
+    // Refetch booking to sync with latest backend state
+    refetchBooking();
+  }, [updateStatus, refetchBooking]);
+
+  const { startSync, stopSync, nextWaypoint } = useLocationSync(bookingVehicleId, {
+    onArrived: handleBackgroundArrival,
+  });
+  const isPickupMode = Boolean(bookingId);
 
   // ── Charges — always sourced from API, never from local state ─────────────
   const { charges, fetchCharges, saveCharges } = useCharges(bookingVehicleId);
@@ -120,9 +139,14 @@ export default function DriverHomeScreen() {
     resetTimer: resetWaitTimer,
   } = useWaitTimer();
 
+  const initializedRideIdRef = useRef<string | null>(null);
+
   // Initialise ride once booking detail loads and restore status from booking
   useEffect(() => {
-    if (isPickupMode && bookingDetailRide && !ride && bookingVehicleId) {
+    const isDifferentRide = initializedRideIdRef.current !== bookingVehicleId;
+    
+    if (isPickupMode && bookingDetailRide && isDifferentRide && bookingVehicleId) {
+      initializedRideIdRef.current = bookingVehicleId;
       initRide({ ...bookingDetailRide, bookingVehicleId });
 
       const initialRideStatus = bookingStatusToRideStatus(bookingStatus as BookingStatus | undefined);
@@ -141,7 +165,7 @@ export default function DriverHomeScreen() {
         }
       }
     }
-  }, [isPickupMode, bookingDetailRide, ride, bookingVehicleId, bookingStatus, initRide, updateStatus, startWaiting]);
+  }, [isPickupMode, bookingDetailRide, bookingVehicleId, bookingStatus, initRide, updateStatus, startWaiting]);
 
   // For hourly bookings re-entered at OTP_VERIFIED/IN_PROGRESS, redirect immediately
   useEffect(() => {
@@ -164,15 +188,35 @@ export default function DriverHomeScreen() {
   useEffect(() => {
     if (bookingVehicleId) fetchCharges();
   }, [bookingVehicleId, fetchCharges]);
+  const syncedRideIdRef = useRef<string | null>(null);
 
-  // Location sync lifecycle
+  // Background Location Sync lifecycle
   useEffect(() => {
-    if (!ride?.bookingVehicleId) return;
-    startSync();
+    if (!ride?.bookingVehicleId) {
+      if (syncedRideIdRef.current) {
+        stopSync();
+        syncedRideIdRef.current = null;
+      }
+      return;
+    }
+
+    if (syncedRideIdRef.current !== ride.bookingVehicleId) {
+      syncedRideIdRef.current = ride.bookingVehicleId;
+      startSync();
+    }
+
+    return () => {
+      // We don't stopSync on every minor re-render or status update.
+      // Only when the component unmounts or ID changes (handled above).
+    };
+  }, [ride?.bookingVehicleId, startSync, stopSync]);
+
+  // Ensure we stop sync when the component unmounts
+  useEffect(() => {
     return () => {
       stopSync();
     };
-  }, [ride?.bookingVehicleId, startSync, stopSync]);
+  }, [stopSync]);
 
   // Clear ride on unmount
   useEffect(() => {
@@ -257,6 +301,7 @@ export default function DriverHomeScreen() {
 
     try {
       await postEndRide(ride.bookingVehicleId);
+      stopSync(); // Stop tracking immediately to avoid pings for ended ride
       resetWaitTimer();
       updateStatus('TRIP_COMPLETED');
       clearRide();

@@ -5,8 +5,11 @@ import {
     setAccessToken,
     removeAccessToken,
     removeChauffeurId,
+    removeActiveBookingVehicleId,
 } from "../storage/tokenStorage";
 import { incrementLoader, decrementLoader } from "../state/useLoaderStore";
+import * as Location from 'expo-location';
+import { LOCATION_TASK_NAME } from './locationTask';
 
 // Endpoints excluded from the global loading indicator (high-frequency background calls).
 const LOADER_SKIP_PATTERNS = ['/location-update'];
@@ -61,6 +64,7 @@ apiClient.interceptors.request.use(
                 method: config.method?.toUpperCase(),
                 url: `${config.baseURL}${config.url}`,
                 params: config.params,
+                data: config.data,
                 headers: {
                     'auth-key': token ? `${token.slice(0, 12)}...` : 'MISSING',
                     'Content-Type': config.headers['Content-Type'],
@@ -109,7 +113,16 @@ apiClient.interceptors.response.use(
         if (error.response?.status === 401) {
             await removeAccessToken();
             await removeChauffeurId();
-            console.warn('[API] 401 — credentials cleared, notifying listeners');
+            await removeActiveBookingVehicleId();
+            try {
+                const isRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+                if (isRunning) {
+                    await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+                }
+            } catch (err) {
+                console.warn('[apiClient] Failed to stop location task on 401:', err);
+            }
+            console.warn('[apiClient] 401 — credentials cleared, notifying listeners');
             unauthorizedListeners.forEach((cb) => cb());
         }
 
