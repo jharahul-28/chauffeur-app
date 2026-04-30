@@ -128,7 +128,7 @@ export function mapBookingDetailToRide(
         id: String(detail.id),
         bookingReference: detail.bookingReference,
         riderName: detail.metadata?.customerName ?? 'Unknown Rider',
-        customerContact: detail.metadata?.customerContact ?? '',
+        customerContact: detail.metadata?.customerContact || undefined,
         pickupText: pickup.address,
         destinationText: drop?.address ?? '',
         pickup: toCoord(pickup),

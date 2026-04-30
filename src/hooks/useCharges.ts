@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
-import { Alert } from 'react-native';
 import { Charge } from '../types/charge';
 import { getCharges, updateCharges } from '../services/bookingApi';
+import { useAlert } from '../context/AlertContext';
 
 export function useCharges(bookingVehicleId: string | undefined) {
+  const { showAlert } = useAlert();
   const [charges, setCharges] = useState<Charge[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,10 +36,10 @@ export function useCharges(bookingVehicleId: string | undefined) {
       setCharges(fresh);
       return true;
     } catch {
-      Alert.alert('Error', 'Failed to save charges. Please try again.');
+      showAlert({ title: 'Error', message: 'Failed to save charges. Please try again.', buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
       return false;
     }
-  }, [bookingVehicleId]);
+  }, [bookingVehicleId, showAlert]);
 
   return {
     charges,

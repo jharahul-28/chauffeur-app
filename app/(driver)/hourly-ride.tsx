@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  Alert,
   ScrollView,
   ActivityIndicator,
   StatusBar,
@@ -27,6 +26,8 @@ import { postEndRide } from '../../src/services/rideService';
 import { getErrorMessage } from '../../src/utils/apiErrorParser';
 import { Charge } from '../../src/types/charge';
 import { HourlyPackage } from '../../src/types/booking';
+import { useAlert } from '../../src/context/AlertContext';
+import CallButton from '../../src/components/CallButton';
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -34,10 +35,13 @@ export default function HourlyRideScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  const { showAlert } = useAlert();
+
   const params = useLocalSearchParams();
   const bookingId = params.bookingId as string | undefined;
   const bookingVehicleId = params.bookingVehicleId as string | undefined;
   const riderName = params.riderName as string | undefined;
+  const customerContact = params.customerContact as string | undefined;
 
   const [isEndingTrip, setIsEndingTrip] = useState(false);
 
@@ -127,10 +131,10 @@ export default function HourlyRideScreen() {
       });
     } catch (err) {
       console.error('[hourly-ride] endTrip failed:', err);
-      Alert.alert('Error', getErrorMessage(err, 'Failed to end ride. Please try again.'));
+      showAlert({ title: 'Error', message: getErrorMessage(err, 'Failed to end ride. Please try again.'), buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
       setIsEndingTrip(false);
     }
-  }, [bookingVehicleId, bookingId, isEndingTrip, ride, riderName, sendFinalAndStop, router]);
+  }, [bookingVehicleId, bookingId, isEndingTrip, ride, riderName, sendFinalAndStop, router, showAlert]);
 
   // ── Loading / error states ─────────────────────────────────────────────────
   if (isLoading) {
@@ -171,6 +175,8 @@ export default function HourlyRideScreen() {
           <Text style={styles.headerTitle}>Hourly Rental</Text>
           <Text style={styles.headerSub} numberOfLines={1}>{ride.riderName}</Text>
         </View>
+
+        <CallButton phoneNumber={customerContact || ride?.customerContact} />
 
         {charges.length > 0 && (
           <Pressable style={styles.chargeBadge} onPress={handleOpenChargesSummary}>

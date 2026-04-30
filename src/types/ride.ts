@@ -49,7 +49,7 @@ export interface ActiveRide {
   bookingReference: string;
   riderName: string;
   /** Raw contact string from API, e.g. "98765 43210" */
-  customerContact: string;
+  customerContact?: string;
   pickupText: string;
   destinationText: string;
   pickup: Coordinate;

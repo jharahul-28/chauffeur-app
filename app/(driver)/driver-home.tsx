@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   Pressable,
   TouchableOpacity,
-  Alert,
   Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -43,6 +42,7 @@ import {
 } from '../../src/services/rideService';
 import { canEndTrip } from '../../src/utils/tripGuard';
 import { getErrorMessage } from '../../src/utils/apiErrorParser';
+import { useAlert } from '../../src/context/AlertContext';
 
 // ─── Top-bar label per ride status ────────────────────────────────────────────
 
@@ -85,6 +85,7 @@ export default function DriverHomeScreen() {
   const [isEndingTrip, setIsEndingTrip] = useState(false);
   const [isArrivingAtPickup, setIsArrivingAtPickup] = useState(false);
 
+  const { showAlert } = useAlert();
   const { location, hasPermission, isLoading, error } = useDriverLocation();
 
   // ── Navigation params ──────────────────────────────────────────────────────
@@ -179,6 +180,7 @@ export default function DriverHomeScreen() {
           bookingId,
           bookingVehicleId,
           riderName: bookingDetailRide?.riderName ?? '',
+          customerContact: bookingDetailRide?.customerContact || undefined,
         },
       });
     }
@@ -248,11 +250,11 @@ export default function DriverHomeScreen() {
       updateStatus('ARRIVED_AT_PICKUP');
     } catch (err) {
       console.error('[driver-home] postArrived failed:', err);
-      Alert.alert('Error', getErrorMessage(err, 'Failed to confirm arrival. Please try again.'));
+      showAlert({ title: 'Error', message: getErrorMessage(err, 'Failed to confirm arrival. Please try again.'), buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
     } finally {
       setIsArrivingAtPickup(false);
     }
-  }, [ride, isArrivingAtPickup, updateStatus]);
+  }, [ride, isArrivingAtPickup, updateStatus, showAlert]);
 
   const handleEnterOTP = useCallback(() => {
     updateStatus('OTP_PENDING');
@@ -272,6 +274,7 @@ export default function DriverHomeScreen() {
           bookingId: bookingId ?? '',
           bookingVehicleId: bookingVehicleId ?? '',
           riderName: ride?.riderName ?? '',
+          customerContact: ride?.customerContact || undefined,
         },
       });
     }
@@ -292,7 +295,7 @@ export default function DriverHomeScreen() {
 
     const guard = canEndTrip(isWaiting);
     if (!guard.allowed) {
-      Alert.alert('Cannot End Trip', guard.reason);
+      showAlert({ title: 'Cannot End Trip', message: guard.reason ?? 'Cannot end trip right now.', buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
       throw new Error(guard.reason); // causes SlideToConfirm to reset
     }
 
@@ -320,21 +323,22 @@ export default function DriverHomeScreen() {
       });
     } catch (err) {
       console.error('[driver-home] endTrip failed:', err);
-      Alert.alert('Failed to End Trip', getErrorMessage(err, 'Something went wrong. Please try again.'));
+      showAlert({ title: 'Failed to End Trip', message: getErrorMessage(err, 'Something went wrong. Please try again.'), buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
       setIsEndingTrip(false);
     }
-  }, [ride, isEndingTrip, isWaiting, stopWaiting, resetWaitTimer, updateStatus, clearRide, router]);
+  }, [ride, isEndingTrip, isWaiting, stopWaiting, resetWaitTimer, updateStatus, clearRide, router, showAlert]);
 
   // ── Wait / Resume ────────────────────────────────────────────────────────
 
   const handleWait = useCallback(() => {
-    Alert.alert(
-      'Start Waiting?',
-      'Do you want to start waiting?',
-      [
-        { text: 'Cancel', style: 'cancel' },
+    showAlert({
+      title: 'Start Waiting?',
+      message: 'Do you want to start waiting?',
+      buttons: [
+        { text: 'Cancel', onPress: () => {}, type: 'secondary' },
         {
           text: 'Wait',
+          type: 'primary',
           onPress: async () => {
             if (!ride?.bookingVehicleId) return;
             try {
@@ -343,22 +347,23 @@ export default function DriverHomeScreen() {
               startWaiting(data.totalWaitingSeconds);
             } catch (err) {
               console.error('[driver-home] postWaiting failed:', err);
-              Alert.alert('Error', 'Failed to start waiting. Please try again.');
+              showAlert({ title: 'Error', message: 'Failed to start waiting. Please try again.', buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
             }
           },
         },
       ],
-    );
-  }, [ride, startWaiting]);
+    });
+  }, [ride, startWaiting, showAlert]);
 
   const handleResumeTrip = useCallback(() => {
-    Alert.alert(
-      'Resume Trip?',
-      'Do you want to resume the trip?',
-      [
-        { text: 'Cancel', style: 'cancel' },
+    showAlert({
+      title: 'Resume Trip?',
+      message: 'Do you want to resume the trip?',
+      buttons: [
+        { text: 'Cancel', onPress: () => {}, type: 'secondary' },
         {
           text: 'Resume',
+          type: 'primary',
           onPress: async () => {
             if (!ride?.bookingVehicleId) return;
             try {
@@ -367,13 +372,13 @@ export default function DriverHomeScreen() {
               stopWaiting();
             } catch (err) {
               console.error('[driver-home] postContinue failed:', err);
-              Alert.alert('Error', 'Failed to resume trip. Please try again.');
+              showAlert({ title: 'Error', message: 'Failed to resume trip. Please try again.', buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
             }
           },
         },
       ],
-    );
-  }, [ride, stopWaiting]);
+    });
+  }, [ride, stopWaiting, showAlert]);
 
   // ── Extra charge handlers ─────────────────────────────────────────────────
 

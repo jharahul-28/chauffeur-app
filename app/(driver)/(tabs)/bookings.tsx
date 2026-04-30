@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { BackHandler, Alert } from 'react-native';
+import { BackHandler } from 'react-native';
+import { useAlert } from '@/src/context/AlertContext';
 
 import AppHeader from '@/src/components/AppHeader';
 import BookingTabs from '@/src/components/BookingTabs';
@@ -33,6 +34,7 @@ export default function BookingsScreen() {
   const { showPast } = useLocalSearchParams<{ showPast?: string }>();
   const showPastTab = showPast === '1';
 
+  const { showAlert } = useAlert();
   const [activeTab, setActiveTab] = useState<BookingTab>('current');
   const { bookings, isLoading, error, refetch } = useBookings(activeTab);
   const isNavigating = useRef(false);
@@ -52,18 +54,20 @@ export default function BookingsScreen() {
       refetch();
 
       const onBackPress = () => {
-        // If we are on the Home screen (bookings), back press should probably
-        // prompt to exit or just do nothing, but definitely NOT go back to Login.
-        Alert.alert('Exit App', 'Are you sure you want to exit?', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Exit', onPress: () => BackHandler.exitApp() },
-        ]);
+        showAlert({
+          title: 'Exit App',
+          message: 'Are you sure you want to exit?',
+          buttons: [
+            { text: 'Cancel', onPress: () => {}, type: 'secondary' },
+            { text: 'Exit', onPress: () => BackHandler.exitApp(), type: 'danger' },
+          ],
+        });
         return true; // prevent default behavior
       };
 
       const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
       return () => subscription.remove();
-    }, [refetch])
+    }, [refetch, showAlert])
   );
 
   const handleBookingAction = (booking: Booking) => {

@@ -4,6 +4,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { onUnauthorized } from "@/src/services/apiClient";
 import { getAccessToken } from "@/src/storage/tokenStorage";
 import GlobalLoader from "@/src/components/GlobalLoader";
+import { AlertProvider } from "@/src/context/AlertContext";
 import "@/src/services/locationTask"; // Register background task
 
 export default function RootLayout() {
@@ -28,8 +29,10 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false }} />
-      <GlobalLoader />
+      <AlertProvider>
+        <Stack screenOptions={{ headerShown: false }} />
+        <GlobalLoader />
+      </AlertProvider>
     </GestureHandlerRootView>
   );
 }

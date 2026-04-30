@@ -1,5 +1,5 @@
 import React, { memo, useMemo } from 'react';
-import { View, Text, StyleSheet, Pressable, Alert, Linking, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -16,6 +16,7 @@ import ChargeIconButton from './ChargeIconButton';
 import SlideToConfirm from './SlideToConfirm';
 import { openNextWaypointInGoogleMaps } from '../utils/googleMapsUrlBuilder';
 import { LatLng } from '../utils/googleMapsUrlBuilder';
+import CallButton from './CallButton';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -125,18 +126,6 @@ const PickupDrawer = memo(function PickupDrawer({
 
   // Use live next-waypoint when available; fall back to pickup coord for pre-trip
   const mapsTarget: LatLng | null = nextWaypointCoord ?? pickupCoord ?? null;
-
-  const handleCall = () => {
-    if (!customerContact) {
-      Alert.alert('No contact', 'Customer contact is not available.');
-      return;
-    }
-    const digits = customerContact.replace(/[\s\-()]/g, '');
-    const tel = digits.startsWith('+') ? digits : `+${digits}`;
-    Linking.openURL(`tel:${tel}`).catch(() =>
-      Alert.alert('Error', 'Unable to open dialler.')
-    );
-  };
 
   const hasSpecialRequest =
     (specialRequest?.beverages?.length ?? 0) > 0 || !!specialRequest?.other;
@@ -274,6 +263,8 @@ const PickupDrawer = memo(function PickupDrawer({
 
             <ChargeIconButton count={chargeCount} onPress={onOpenChargesSummary ?? (() => { })} />
 
+            <CallButton phoneNumber={customerContact} />
+
             {mapsTarget && (
               <Pressable
                 style={styles.mapsIconButton}
@@ -400,10 +391,7 @@ const PickupDrawer = memo(function PickupDrawer({
           )}
 
           <View style={styles.actionsRow}>
-            {/* Call button */}
-            <Pressable style={styles.iconButton} onPress={handleCall}>
-              <Ionicons name="call-outline" size={20} color="#EDB96D" />
-            </Pressable>
+            <CallButton phoneNumber={customerContact} />
 
             <View style={styles.etaContainer}>
               <Text style={styles.etaLabel}>EST. ARRIVAL</Text>
@@ -649,14 +637,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#2C2C2E',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   mapsIconButton: {
     width: 46,
