@@ -13,6 +13,7 @@ interface LocationState {
   
   setNextWaypoint: (waypoint: NextWaypoint | null) => void;
   setSyncResponse: (data: { waypoint: NextWaypoint | null; distanceMeters: number; rideStartTime?: string | null; arrived?: boolean }) => void;
+  setRideStartTime: (time: string | null) => void;
   clearLocationState: () => void;
 }
 
@@ -30,6 +31,8 @@ export const useLocationStore = create<LocationState>((set) => ({
     rideStartTime: data.rideStartTime || null,
     arrived: data.arrived ?? false,
   }),
+
+  setRideStartTime: (time) => set({ rideStartTime: time }),
 
   clearLocationState: () => set({ 
     nextWaypoint: null, 

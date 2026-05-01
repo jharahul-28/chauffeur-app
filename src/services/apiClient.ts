@@ -66,25 +66,6 @@ apiClient.interceptors.request.use(
         if (shouldTrack) incrementLoader();
         config._tracked = shouldTrack;
 
-        if (__DEV__) {
-            const isConfig = config.url?.includes('/utils/config');
-            if (isConfig) {
-                console.log('[API] 🛠️ Config Request Headers:', config.headers);
-            }
-            console.log('[API] ➡️  Request', {
-                method: config.method?.toUpperCase(),
-                url: `${config.baseURL}${config.url}`,
-                params: config.params,
-                data: config.data,
-                headers: {
-                    'auth-key': token ? `${token.slice(0, 12)}...` : 'MISSING',
-                    'platform': config.headers['platform'],
-                    'app-version': config.headers['app-version'],
-                    'app-type': config.headers['app-type'],
-                },
-            });
-        }
-
         return config;
     },
     (error) => {

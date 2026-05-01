@@ -9,6 +9,7 @@ interface RideState {
   extraCharges: ExtraCharge[];
   initRide: (rideData: Omit<ActiveRide, 'status'>) => void;
   updateStatus: (status: RideStatus) => void;
+  updateRide: (data: Partial<ActiveRide>) => void;
   addExtraCharge: (charge: ExtraCharge) => void;
   updateExtraCharge: (index: number, charge: ExtraCharge) => void;
   clearRide: () => void;
@@ -27,6 +28,11 @@ export const useRideStore = create<RideState>((set) => ({
   updateStatus: (status) =>
     set((state) => ({
       ride: state.ride ? { ...state.ride, status } : null,
+    })),
+
+  updateRide: (data) =>
+    set((state) => ({
+      ride: state.ride ? { ...state.ride, ...data } : null,
     })),
 
   addExtraCharge: (charge) => {

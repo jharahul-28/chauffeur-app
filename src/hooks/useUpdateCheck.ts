@@ -9,20 +9,12 @@ export function useUpdateCheck() {
 
     useEffect(() => {
         const checkUpdate = async () => {
-            console.log('[useUpdateCheck] 🔍 Starting update check...');
             try {
                 const configData = await getAppConfig();
 
                 // Get version from app.json / Constants
                 const currentVersion = Constants.expoConfig?.version || '1.0.0';
                 const latestVersion = configData.config.LATEST_APP_VERSION;
-
-                console.log('[useUpdateCheck] 📊 Version Comparison:', {
-                    currentInApp: currentVersion,
-                    latestOnServer: latestVersion,
-                    forceUpdate: configData.config.FORCE_UPDATE,
-                    softUpdate: configData.config.SOFT_UPDATE
-                });
 
                 if (latestVersion !== currentVersion) {
                     const isForceUpdate = configData.config.FORCE_UPDATE;

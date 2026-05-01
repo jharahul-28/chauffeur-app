@@ -18,8 +18,6 @@ export interface ConfigResponse {
  * Headers (platform, app-version, app-type) are automatically added by apiClient.
  */
 export const getAppConfig = async (): Promise<ConfigResponse> => {
-    console.log('[configService] 🌐 Fetching config from /utils/config...');
     const response = await apiClient.get<ConfigResponse>('/utils/config');
-    console.log('[configService] ✅ Config received:', response.data.config.LATEST_APP_VERSION);
     return response.data;
 };

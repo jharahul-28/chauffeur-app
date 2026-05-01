@@ -81,6 +81,8 @@ export interface ActiveRide {
   rideDate?: string | null;
   /** Time portion of the ride schedule (HH:mm:ss) — used by hourly timer */
   pickupTime?: string | null;
+  /** Server-side ride start time for hourly rentals. Format: "YYYY-MM-DD HH:mm:ss" */
+  rideStartTime?: string | null;
   /** Present when tripType === 'HOURLY_RENTALS' */
   hourlyPackage?: HourlyPackage;
 }

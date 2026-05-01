@@ -33,11 +33,12 @@ export const postArrived = (bookingVehicleId: string): Promise<void> => {
 export const postVerifyOtp = async (
     bookingVehicleId: string,
     otp: string
-): Promise<void> => {
-    await apiClient.post(`${base(bookingVehicleId)}/verify-otp`, null, {
+): Promise<{ rideStartTime?: string }> => {
+    const response = await apiClient.post(`${base(bookingVehicleId)}/verify-otp`, null, {
         params: { otp },
     });
-    console.log('[rideService] verify-otp ✓', bookingVehicleId);
+    console.log('[rideService] verify-otp ✓', bookingVehicleId, response.data);
+    return response.data;
 };
 
 // ─── Types ─────────────────────────────────────────────────────────────────────

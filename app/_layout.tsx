@@ -9,7 +9,6 @@ import UpdateManager from "@/src/components/UpdateManager";
 import "@/src/services/locationTask"; // Register background task
 
 export default function RootLayout() {
-  console.log('[RootLayout] 🏗️ Rendering RootLayout');
   const router = useRouter();
 
   // Redirect to home if a session token already exists
@@ -23,7 +22,6 @@ export default function RootLayout() {
 
   useEffect(() => {
     const unsubscribe = onUnauthorized(() => {
-      console.warn('[RootLayout] Session expired — redirecting to login');
       router.replace('/');
     });
     return unsubscribe;

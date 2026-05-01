@@ -26,6 +26,7 @@ import { useLocationSync } from '../../src/hooks/useLocationSync';
 import { RouteInfo } from '../../src/components/DrivingRoute';
 import { formatEta, formatDistance } from '../../src/utils/routeUtils';
 import { useRideStore } from '../../src/state/useRideStore';
+import { useLocationStore } from '../../src/state/useLocationStore';
 import { useCharges } from '../../src/hooks/useCharges';
 import { useWaitTimer } from '../../src/hooks/useWaitTimer';
 import { useBookingDetail } from '../../src/hooks/useBookingDetail';
@@ -104,7 +105,8 @@ export default function DriverHomeScreen() {
   } = useBookingDetail(bookingId);
 
   // ── Ride state machine ────────────────────────────────────────────────────
-  const { ride, initRide, updateStatus, clearRide } = useRideStore();
+  const { ride, initRide, updateStatus, updateRide, clearRide } = useRideStore();
+  const setRideStartTime = useLocationStore((s) => s.setRideStartTime);
 
   // ── Waypoint arrival handler (called by background sync) ───────────────
   const handleBackgroundArrival = useCallback(() => {
@@ -202,16 +204,26 @@ export default function DriverHomeScreen() {
       return;
     }
 
-    if (syncedRideIdRef.current !== ride.bookingVehicleId) {
-      syncedRideIdRef.current = ride.bookingVehicleId;
-      startSync();
+    const isTrackingAllowed = ride.status !== 'GOING_TO_PICKUP';
+
+    if (isTrackingAllowed) {
+      if (syncedRideIdRef.current !== ride.bookingVehicleId) {
+        syncedRideIdRef.current = ride.bookingVehicleId;
+        startSync();
+      }
+    } else {
+      // If we're in GOING_TO_PICKUP, ensure sync is stopped
+      if (syncedRideIdRef.current) {
+        stopSync();
+        syncedRideIdRef.current = null;
+      }
     }
 
     return () => {
       // We don't stopSync on every minor re-render or status update.
-      // Only when the component unmounts or ID changes (handled above).
+      // Only when the component unmounts or ID changes/status restricts (handled above).
     };
-  }, [ride?.bookingVehicleId, startSync, stopSync]);
+  }, [ride?.bookingVehicleId, ride?.status, startSync, stopSync]);
 
   // Ensure we stop sync when the component unmounts
   useEffect(() => {
@@ -282,8 +294,14 @@ export default function DriverHomeScreen() {
 
   const handleVerifyOtp = useCallback(async (otp: string) => {
     if (!ride?.bookingVehicleId) throw new Error('No active ride');
-    await postVerifyOtp(ride.bookingVehicleId, otp);
-  }, [ride]);
+    const response = await postVerifyOtp(ride.bookingVehicleId, otp);
+    
+    // Immediate calculation for timer screen
+    if (response.rideStartTime) {
+      setRideStartTime(response.rideStartTime);
+      updateRide({ rideStartTime: response.rideStartTime });
+    }
+  }, [ride, setRideStartTime, updateRide]);
 
   const handleOTPDismiss = useCallback(() => {
     setOtpModalVisible(false);
