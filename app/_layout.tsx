@@ -5,9 +5,11 @@ import { onUnauthorized } from "@/src/services/apiClient";
 import { getAccessToken } from "@/src/storage/tokenStorage";
 import GlobalLoader from "@/src/components/GlobalLoader";
 import { AlertProvider } from "@/src/context/AlertContext";
+import UpdateManager from "@/src/components/UpdateManager";
 import "@/src/services/locationTask"; // Register background task
 
 export default function RootLayout() {
+  console.log('[RootLayout] 🏗️ Rendering RootLayout');
   const router = useRouter();
 
   // Redirect to home if a session token already exists
@@ -30,6 +32,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AlertProvider>
+        <UpdateManager />
         <Stack screenOptions={{ headerShown: false }} />
         <GlobalLoader />
       </AlertProvider>

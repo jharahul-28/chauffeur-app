@@ -1,4 +1,6 @@
 import axios from "axios";
+import { Platform } from "react-native";
+import Constants from 'expo-constants';
 import axiosRetry from "axios-retry";
 import {
     getAccessToken,
@@ -55,11 +57,20 @@ apiClient.interceptors.request.use(
             config.headers["auth-key"] = token;
         }
 
+        // Standard headers for all chauffeur app requests
+        config.headers['platform'] = 'chauffeur-app';
+        config.headers['app-version'] = Constants.expoConfig?.version || '1.0.0';
+        config.headers['app-type'] = Platform.OS.toUpperCase();
+
         const shouldTrack = !LOADER_SKIP_PATTERNS.some((p) => config.url?.includes(p));
         if (shouldTrack) incrementLoader();
         config._tracked = shouldTrack;
 
         if (__DEV__) {
+            const isConfig = config.url?.includes('/utils/config');
+            if (isConfig) {
+                console.log('[API] 🛠️ Config Request Headers:', config.headers);
+            }
             console.log('[API] ➡️  Request', {
                 method: config.method?.toUpperCase(),
                 url: `${config.baseURL}${config.url}`,
@@ -67,7 +78,9 @@ apiClient.interceptors.request.use(
                 data: config.data,
                 headers: {
                     'auth-key': token ? `${token.slice(0, 12)}...` : 'MISSING',
-                    'Content-Type': config.headers['Content-Type'],
+                    'platform': config.headers['platform'],
+                    'app-version': config.headers['app-version'],
+                    'app-type': config.headers['app-type'],
                 },
             });
         }
