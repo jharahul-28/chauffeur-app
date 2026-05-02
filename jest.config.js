@@ -9,7 +9,15 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(jest-)?react-native|@react-native|expo|@expo|@unimodules|zustand)',
+    'node_modules/(?!(' + [
+      '(jest-)?react-native',
+      '@react-native(-community)?',
+      'expo(-[a-z-]+)?',
+      '@expo(-[a-z-]+)?',
+      '@unimodules',
+      '@react-navigation',
+      'zustand',
+    ].join('|') + ')/)',
   ],
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',

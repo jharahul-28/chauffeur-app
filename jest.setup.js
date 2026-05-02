@@ -1,5 +1,7 @@
 // Runs via setupFilesAfterEnv — Jest globals (expect, jest) are available here.
-require('@testing-library/jest-native/extend-expect');
+// Built-in matchers (toBeVisible, toHaveText, etc.) are provided directly by
+// @testing-library/react-native v12.4+ — no separate jest-native package needed.
+require('@testing-library/react-native/extend-expect');
 
 // ── React Native core mocks ────────────────────────────────────────────────────
 jest.mock('react-native/Libraries/EventEmitter/NativeEventEmitter');
