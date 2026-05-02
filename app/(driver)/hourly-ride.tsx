@@ -23,6 +23,7 @@ import { useHourlyLocationSync } from '../../src/hooks/useHourlyLocationSync';
 import { useBookingDetail } from '../../src/hooks/useBookingDetail';
 import { useCharges } from '../../src/hooks/useCharges';
 import { postEndRide } from '../../src/services/rideService';
+import { removeRideStartTime } from '../../src/storage/tokenStorage';
 import { getErrorMessage } from '../../src/utils/apiErrorParser';
 import { Charge } from '../../src/types/charge';
 import { HourlyPackage } from '../../src/types/booking';
@@ -124,6 +125,7 @@ export default function HourlyRideScreen() {
       await sendFinalAndStop();
       // 2. End the ride
       await postEndRide(bookingVehicleId);
+      await removeRideStartTime();
       router.push({
         pathname: '/(driver)/pending-amount',
         params: {
@@ -138,7 +140,7 @@ export default function HourlyRideScreen() {
       });
     } catch (err) {
       console.error('[hourly-ride] endTrip failed:', err);
-      showAlert({ title: 'Error', message: getErrorMessage(err, 'Failed to end ride. Please try again.'), buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
+      showAlert({ title: 'Error', message: getErrorMessage(err, 'Failed to end ride. Please try again.'), buttons: [{ text: 'OK', onPress: () => { }, type: 'primary' }] });
       setIsEndingTrip(false);
     }
   }, [bookingVehicleId, bookingId, isEndingTrip, ride, riderName, sendFinalAndStop, router, showAlert]);

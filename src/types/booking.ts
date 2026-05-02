@@ -276,7 +276,7 @@ export function mapApiBookingVehicle(raw: ApiBookingVehicle): Booking {
 
   return {
     id: String(raw.id),
-    bookingId: String(booking.id || raw.bookingId || 0),
+    bookingId: String(raw.bookingId || booking.id || 0),
     categoryName: meta.categoryName ?? '',
     vehicleInfo: meta.vehicleBrand && meta.vehicleModel
       ? `${meta.vehicleBrand} ${meta.vehicleModel}`

@@ -83,3 +83,27 @@ export const removeActiveBookingVehicleId = async () => {
         console.error("Unable to remove active booking vehicle id", error);
     }
 };
+
+export const getRideStartTime = async (): Promise<string | null> => {
+    try {
+        return await AsyncStorage.getItem(STORAGE_KEYS.RIDE_START_TIME);
+    } catch (error) {
+        return null;
+    }
+};
+
+export const setRideStartTimeStorage = async (time: string) => {
+    try {
+        await AsyncStorage.setItem(STORAGE_KEYS.RIDE_START_TIME, time);
+    } catch (error) {
+        console.error("Unable to store ride start time", error);
+    }
+};
+
+export const removeRideStartTime = async () => {
+    try {
+        await AsyncStorage.removeItem(STORAGE_KEYS.RIDE_START_TIME);
+    } catch (error) {
+        console.error("Unable to remove ride start time", error);
+    }
+};

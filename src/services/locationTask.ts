@@ -1,14 +1,19 @@
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import { updateDriverLocation } from './rideService';
-import { getActiveBookingVehicleId, getAccessToken, removeActiveBookingVehicleId } from '../storage/tokenStorage';
+import { 
+  getActiveBookingVehicleId, 
+  getAccessToken, 
+  removeActiveBookingVehicleId,
+  setRideStartTimeStorage 
+} from '../storage/tokenStorage';
 import { useLocationStore } from '../state/useLocationStore';
 import { DeviceEventEmitter } from 'react-native';
 
 export const LOCATION_TASK_NAME = 'BACKGROUND_LOCATION_SYNC';
 
 let lastSyncTimestamp = 0;
-const MIN_SYNC_INTERVAL_MS = 25000; // Throttle to roughly 25-30s
+const MIN_SYNC_INTERVAL_MS = 30000; // STRICT 30s throttle. Never sends before 30s.
 
 /**
  * Global task definition for background location tracking.
@@ -56,6 +61,9 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
           
           useLocationStore.getState().setSyncResponse(syncData);
           DeviceEventEmitter.emit('LOCATION_SYNC_UPDATE', syncData);
+          if (response.rideStartTime) {
+            setRideStartTimeStorage(response.rideStartTime);
+          }
           lastSyncTimestamp = now; // Update timestamp only on success
         } else {
           // No active booking found in storage, we should probably stop the task

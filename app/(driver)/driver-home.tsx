@@ -47,6 +47,7 @@ import {
   postSkipStop,
   getWaitingTimer,
 } from '../../src/services/rideService';
+import { setRideStartTimeStorage, removeRideStartTime } from '../../src/storage/tokenStorage';
 import { deriveActiveWaypoint } from '../../src/utils/waypointMapper';
 import { sortWaypoints } from '../../src/utils/waypointUtils';
 import { canEndTrip } from '../../src/utils/tripGuard';
@@ -115,29 +116,35 @@ export default function DriverHomeScreen() {
   } = useBookingDetail(bookingId);
 
   // ── Ride state machine ────────────────────────────────────────────────────
-  const { ride, initRide, updateStatus, updateRide, clearRide } = useRideStore();
+  const ride = useRideStore((s) => s.ride);
+  const initRide = useRideStore((s) => s.initRide);
+  const updateStatus = useRideStore((s) => s.updateStatus);
+  const updateRide = useRideStore((s) => s.updateRide);
+  const clearRide = useRideStore((s) => s.clearRide);
+
   const setRideStartTime = useLocationStore((s) => s.setRideStartTime);
 
   // ── Waypoint arrival handler (called by background sync) ───────────────
   const handleBackgroundArrival = useCallback(() => {
     console.log('[driver-home] 🎯 Background arrival detected!');
-    // Only auto-transition if we're still in GOING_TO_PICKUP
     const currentRide = useRideStore.getState().ride;
+
+    // Only proceed and refetch if we haven't already marked arrival
     if (currentRide && currentRide.status === 'GOING_TO_PICKUP') {
       updateStatus('ARRIVED_AT_PICKUP');
-      // Fire the API call too
       postArrived(currentRide.bookingVehicleId).catch((err) =>
         console.error('[driver-home] background postArrived failed:', err)
       );
+      // Only refetch when we actually arrive the first time
+      refetchBooking();
     }
-    // Refetch booking to sync with latest backend state
-    refetchBooking();
   }, [updateStatus, refetchBooking]);
 
-  const { startSync, stopSync, nextWaypoint, sendLocationUpdate } = useLocationSync(bookingVehicleId, {
+  const syncOptions = useMemo(() => ({
     onArrived: handleBackgroundArrival,
-    onLocationUpdate: refetchBooking,
-  });
+  }), [handleBackgroundArrival]);
+
+  const { startSync, stopSync, nextWaypoint, sendLocationUpdate } = useLocationSync(bookingVehicleId, syncOptions);
   const isPickupMode = Boolean(bookingId);
 
   // ── Charges — always sourced from API, never from local state ─────────────
@@ -152,7 +159,8 @@ export default function DriverHomeScreen() {
     syncFromBackend: syncWaitTimerState,
     stopWaiting,
     resetTimer: resetWaitTimer,
-  } = useWaitTimer();
+    syncWithServer,
+  } = useWaitTimer(bookingVehicleId);
 
   /**
    * Fetch /waiting-timer and feed the result into the hook.
@@ -181,7 +189,7 @@ export default function DriverHomeScreen() {
   // Initialise ride once booking detail loads and restore status from booking
   useEffect(() => {
     const isDifferentRide = initializedRideIdRef.current !== bookingVehicleId;
-    
+
     if (isPickupMode && bookingDetailRide && isDifferentRide && bookingVehicleId) {
       initializedRideIdRef.current = bookingVehicleId;
       initRide({ ...bookingDetailRide, bookingVehicleId });
@@ -190,9 +198,11 @@ export default function DriverHomeScreen() {
 
       if (initialRideStatus === 'GOING_TO_PICKUP') {
         if (!bookingStatus || bookingStatus === 'ASSIGNED') {
-          postDriverOnTheWay(bookingVehicleId).catch((err) =>
-            console.error('[driver-home] postDriverOnTheWay failed:', err)
-          );
+          postDriverOnTheWay(bookingVehicleId)
+            .then(() => sendLocationUpdate())
+            .catch((err) =>
+              console.error('[driver-home] postDriverOnTheWay failed:', err)
+            );
         }
       } else {
         updateStatus(initialRideStatus);
@@ -206,21 +216,24 @@ export default function DriverHomeScreen() {
 
   // For hourly bookings re-entered at OTP_VERIFIED/IN_PROGRESS, redirect immediately
   useEffect(() => {
-    const isHourly = (tripType ?? bookingDetailRide?.tripType) === 'HOURLY_RENTALS';
+    const tripTypeSource = tripType || bookingDetailRide?.tripType || ride?.tripType;
+    const isHourly = tripTypeSource === 'HOURLY_RENTALS';
     const isPostOtp = bookingStatus === 'OTP_VERIFIED' || bookingStatus === 'IN_PROGRESS';
+
     if (isPickupMode && isHourly && isPostOtp && bookingId && bookingVehicleId) {
+      console.log('[driver-home] 🔄 Redirecting to Hourly Ride screen...');
       stopSync();
       router.replace({
         pathname: '/(driver)/hourly-ride',
         params: {
           bookingId,
           bookingVehicleId,
-          riderName: bookingDetailRide?.riderName ?? '',
-          customerContact: bookingDetailRide?.customerContact || undefined,
+          riderName: (bookingDetailRide?.riderName || ride?.riderName) ?? '',
+          customerContact: bookingDetailRide?.customerContact || ride?.customerContact || undefined,
         },
       });
     }
-  }, [bookingDetailRide, bookingStatus, tripType, isPickupMode, bookingId, bookingVehicleId, stopSync, router]);
+  }, [bookingDetailRide, ride, bookingStatus, tripType, isPickupMode, bookingId, bookingVehicleId, stopSync, router]);
 
   // Fetch charges from API on mount
   useEffect(() => {
@@ -238,18 +251,12 @@ export default function DriverHomeScreen() {
       return;
     }
 
-    const isTrackingAllowed = ride.status !== 'GOING_TO_PICKUP';
+    const isTrackingAllowed = true;
 
     if (isTrackingAllowed) {
       if (syncedRideIdRef.current !== ride.bookingVehicleId) {
         syncedRideIdRef.current = ride.bookingVehicleId;
         startSync();
-      }
-    } else {
-      // If we're in GOING_TO_PICKUP, ensure sync is stopped
-      if (syncedRideIdRef.current) {
-        stopSync();
-        syncedRideIdRef.current = null;
       }
     }
 
@@ -327,9 +334,10 @@ export default function DriverHomeScreen() {
     try {
       await postArrived(ride.bookingVehicleId);
       updateStatus('ARRIVED_AT_PICKUP');
+      sendLocationUpdate();
     } catch (err) {
       console.error('[driver-home] postArrived failed:', err);
-      showAlert({ title: 'Error', message: getErrorMessage(err, 'Failed to confirm arrival. Please try again.'), buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
+      showAlert({ title: 'Error', message: getErrorMessage(err, 'Failed to confirm arrival. Please try again.'), buttons: [{ text: 'OK', onPress: () => { }, type: 'primary' }] });
     } finally {
       setIsArrivingAtPickup(false);
     }
@@ -362,11 +370,13 @@ export default function DriverHomeScreen() {
   const handleVerifyOtp = useCallback(async (otp: string) => {
     if (!ride?.bookingVehicleId) throw new Error('No active ride');
     const response = await postVerifyOtp(ride.bookingVehicleId, otp);
-    
+    sendLocationUpdate();
+
     // Immediate calculation for timer screen
     if (response.rideStartTime) {
       setRideStartTime(response.rideStartTime);
       updateRide({ rideStartTime: response.rideStartTime });
+      setRideStartTimeStorage(response.rideStartTime);
     }
   }, [ride, setRideStartTime, updateRide]);
 
@@ -380,15 +390,17 @@ export default function DriverHomeScreen() {
 
     const guard = canEndTrip(isWaiting);
     if (!guard.allowed) {
-      showAlert({ title: 'Cannot End Trip', message: guard.reason ?? 'Cannot end trip right now.', buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
-      throw new Error(guard.reason); // causes SlideToConfirm to reset
+      showAlert({ title: 'Cannot End Trip', message: guard.reason ?? 'Cannot end trip right now.', buttons: [{ text: 'OK', onPress: () => { }, type: 'primary' }] });
+      throw new Error(guard.reason ?? 'Cannot end trip right now.'); // causes SlideToConfirm to reset
     }
 
     setIsEndingTrip(true);
     stopWaiting();
 
     try {
+      sendLocationUpdate(); // Send final location before ending
       await postEndRide(ride.bookingVehicleId);
+      await removeRideStartTime();
       stopSync(); // Stop tracking immediately to avoid pings for ended ride
       resetWaitTimer();
       updateStatus('TRIP_COMPLETED');
@@ -408,7 +420,7 @@ export default function DriverHomeScreen() {
       });
     } catch (err) {
       console.error('[driver-home] endTrip failed:', err);
-      showAlert({ title: 'Failed to End Trip', message: getErrorMessage(err, 'Something went wrong. Please try again.'), buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
+      showAlert({ title: 'Failed to End Trip', message: getErrorMessage(err, 'Something went wrong. Please try again.'), buttons: [{ text: 'OK', onPress: () => { }, type: 'primary' }] });
       setIsEndingTrip(false);
     }
   }, [ride, isEndingTrip, isWaiting, stopWaiting, resetWaitTimer, updateStatus, clearRide, router, showAlert]);
@@ -420,7 +432,7 @@ export default function DriverHomeScreen() {
       title: 'Start Waiting?',
       message: 'Do you want to start waiting?',
       buttons: [
-        { text: 'Cancel', onPress: () => {}, type: 'secondary' },
+        { text: 'Cancel', onPress: () => { }, type: 'secondary' },
         {
           text: 'Wait',
           type: 'primary',
@@ -429,11 +441,15 @@ export default function DriverHomeScreen() {
             try {
               logWaitEvent('WAIT_START', ride.id);
               await postWaiting(ride.bookingVehicleId);
+              // Authoritative sync from /waiting-timer API
+              const data = await syncWithServer();
               sendLocationUpdate();
-              await syncWaitTimer(ride.bookingVehicleId, true);
+              if (data) {
+                await syncWaitTimer(ride.bookingVehicleId, true);
+              }
             } catch (err) {
               console.error('[driver-home] postWaiting failed:', err);
-              showAlert({ title: 'Error', message: 'Failed to start waiting. Please try again.', buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
+              showAlert({ title: 'Error', message: 'Failed to start waiting. Please try again.', buttons: [{ text: 'OK', onPress: () => { }, type: 'primary' }] });
             }
           },
         },
@@ -446,7 +462,7 @@ export default function DriverHomeScreen() {
       title: 'Resume Trip?',
       message: 'Do you want to resume the trip?',
       buttons: [
-        { text: 'Cancel', onPress: () => {}, type: 'secondary' },
+        { text: 'Cancel', onPress: () => { }, type: 'secondary' },
         {
           text: 'Resume',
           type: 'primary',
@@ -459,7 +475,7 @@ export default function DriverHomeScreen() {
               stopWaiting();
             } catch (err) {
               console.error('[driver-home] postContinue failed:', err);
-              showAlert({ title: 'Error', message: 'Failed to resume trip. Please try again.', buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
+              showAlert({ title: 'Error', message: 'Failed to resume trip. Please try again.', buttons: [{ text: 'OK', onPress: () => { }, type: 'primary' }] });
             }
           },
         },
@@ -482,7 +498,7 @@ export default function DriverHomeScreen() {
       showAlert({
         title: 'Error',
         message: getErrorMessage(err, 'Failed to confirm stop arrival. Please try again.'),
-        buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }],
+        buttons: [{ text: 'OK', onPress: () => { }, type: 'primary' }],
       });
     } finally {
       setIsArrivingAtStop(false);
@@ -495,7 +511,7 @@ export default function DriverHomeScreen() {
       title: 'Confirm Arrival',
       message: 'Are you sure you have arrived at this stop?',
       buttons: [
-        { text: 'Cancel', onPress: () => {}, type: 'secondary' },
+        { text: 'Cancel', onPress: () => { }, type: 'secondary' },
         { text: 'Confirm', onPress: executeArrivedAtStop, type: 'primary' },
       ],
     });
@@ -514,7 +530,7 @@ export default function DriverHomeScreen() {
       showAlert({
         title: 'Error',
         message: getErrorMessage(err, 'Failed to skip stop. Please try again.'),
-        buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }],
+        buttons: [{ text: 'OK', onPress: () => { }, type: 'primary' }],
       });
     } finally {
       setIsSkippingStop(false);
@@ -527,7 +543,7 @@ export default function DriverHomeScreen() {
       title: 'Confirm Skip',
       message: 'Are you sure you want to skip this stop?',
       buttons: [
-        { text: 'Cancel', onPress: () => {}, type: 'secondary' },
+        { text: 'Cancel', onPress: () => { }, type: 'secondary' },
         { text: 'Confirm', onPress: executeSkipStop, type: 'primary' },
       ],
     });
