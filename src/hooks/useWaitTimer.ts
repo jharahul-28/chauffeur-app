@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { formatCountdown } from '../utils/timeUtils';
+import { formatCountdown, formatHHMMSS } from '../utils/timeUtils';
 import { fetchWaitingTimer } from '../services/rideService';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
