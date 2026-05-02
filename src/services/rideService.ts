@@ -50,6 +50,17 @@ export interface WaitingResponse {
   formattedWaitingTime: string;
 }
 
+/**
+ * Fetches the current cumulative wait-timer state from the backend.
+ * Call on screen mount (if status === WAITING) and after every postWaiting success
+ * to seed the local timer from the authoritative backend value.
+ */
+export const getWaitingTimer = (bookingVehicleId: string): Promise<WaitingResponse> =>
+    apiClient.get<WaitingResponse>(`${base(bookingVehicleId)}/waiting-timer`).then((res) => {
+        console.log('[rideService] waiting-timer ✓', bookingVehicleId, res.data);
+        return res.data;
+    });
+
 /** Called when the driver taps "Wait" during an active trip. */
 export const postWaiting = (bookingVehicleId: string): Promise<WaitingResponse> =>
     apiClient.post<WaitingResponse>(`${base(bookingVehicleId)}/waiting`).then((res) => {

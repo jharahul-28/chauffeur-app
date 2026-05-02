@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { formatCountdown } from '../utils/timeUtils';
+import { formatHHMMSS } from '../utils/timeUtils';
 
 interface WaitTimerDisplayProps {
   /** Seconds elapsed in the current wait session — counts up from 0. */
@@ -27,7 +27,7 @@ const WaitTimerDisplay = memo(function WaitTimerDisplay({
         <View style={[styles.dot, isFreeTimeExceeded ? styles.dotExceeded : styles.dotActive]} />
         <Text style={styles.label}>Waiting: </Text>
         <Text style={[styles.elapsed, isFreeTimeExceeded && styles.elapsedExceeded]}>
-          {formatCountdown(elapsedSeconds)}
+          {formatHHMMSS(elapsedSeconds)}
         </Text>
       </View>
 

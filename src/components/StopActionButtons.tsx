@@ -24,8 +24,9 @@ const StopActionButtons = memo(function StopActionButtons({
   onSkip,
 }: StopActionButtonsProps) {
   const mappingFailed = waypointId === null;
-  const arrivedDisabled = isArriving || mappingFailed;
-  const skipDisabled = isSkipping || mappingFailed;
+  const anyLoading = isArriving || isSkipping;
+  const arrivedDisabled = anyLoading || mappingFailed;
+  const skipDisabled = anyLoading || mappingFailed;
 
   return (
     <View style={styles.container}>

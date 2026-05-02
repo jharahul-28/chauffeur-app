@@ -8,8 +8,11 @@ import {
   Pressable,
   TouchableOpacity,
   Linking,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { bgColors, themeColors } from '../../src/constants/colors';
@@ -42,6 +45,7 @@ import {
   postEndRide,
   postArrivedAtStop,
   postSkipStop,
+  getWaitingTimer,
 } from '../../src/services/rideService';
 import { deriveActiveWaypoint } from '../../src/utils/waypointMapper';
 import { sortWaypoints } from '../../src/utils/waypointUtils';
@@ -145,9 +149,32 @@ export default function DriverHomeScreen() {
     elapsedTime,
     isFreeTimeExceeded,
     startWaiting,
+    syncFromBackend: syncWaitTimerState,
     stopWaiting,
     resetTimer: resetWaitTimer,
   } = useWaitTimer();
+
+  /**
+   * Fetch /waiting-timer and feed the result into the hook.
+   * - Pass `seed=true` to call startWaiting (screen mount when status===WAITING).
+   * - Otherwise calls syncFromBackend to re-seed without restarting the interval.
+   */
+  const syncWaitTimer = useCallback(
+    async (bvId: string, seed = false) => {
+      try {
+        const data = await getWaitingTimer(bvId);
+        if (seed) {
+          startWaiting(data.totalWaitingSeconds, data.formattedWaitingTime);
+        } else {
+          syncWaitTimerState(data.totalWaitingSeconds, data.formattedWaitingTime);
+        }
+      } catch (err) {
+        console.warn('[driver-home] syncWaitTimer failed — local timer continues', err);
+        // Intentional fallback: local timer keeps running if API call fails
+      }
+    },
+    [startWaiting, syncWaitTimerState],
+  );
 
   const initializedRideIdRef = useRef<string | null>(null);
 
@@ -171,11 +198,11 @@ export default function DriverHomeScreen() {
         updateStatus(initialRideStatus);
 
         if (bookingStatus === 'WAITING') {
-          startWaiting(0);
+          syncWaitTimer(bookingVehicleId, true);
         }
       }
     }
-  }, [isPickupMode, bookingDetailRide, bookingVehicleId, bookingStatus, initRide, updateStatus, startWaiting]);
+  }, [isPickupMode, bookingDetailRide, bookingVehicleId, bookingStatus, initRide, updateStatus, syncWaitTimer]);
 
   // For hourly bookings re-entered at OTP_VERIFIED/IN_PROGRESS, redirect immediately
   useEffect(() => {
@@ -238,6 +265,26 @@ export default function DriverHomeScreen() {
       stopSync();
     };
   }, [stopSync]);
+
+  // Re-sync wait timer on screen focus (prevents drift after tab switches)
+  useFocusEffect(
+    useCallback(() => {
+      if (bookingVehicleId && isWaiting) {
+        syncWaitTimer(bookingVehicleId);
+      }
+    }, [bookingVehicleId, isWaiting, syncWaitTimer]),
+  );
+
+  // Re-sync wait timer when app returns to foreground (prevents drift after backgrounding)
+  useEffect(() => {
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === 'active' && bookingVehicleId && isWaiting) {
+        syncWaitTimer(bookingVehicleId);
+      }
+    };
+    const sub = AppState.addEventListener('change', handleAppStateChange);
+    return () => sub.remove();
+  }, [bookingVehicleId, isWaiting, syncWaitTimer]);
 
   // Clear ride on unmount
   useEffect(() => {
@@ -381,9 +428,9 @@ export default function DriverHomeScreen() {
             if (!ride?.bookingVehicleId) return;
             try {
               logWaitEvent('WAIT_START', ride.id);
-              const data = await postWaiting(ride.bookingVehicleId);
+              await postWaiting(ride.bookingVehicleId);
               sendLocationUpdate();
-              startWaiting(data.totalWaitingSeconds);
+              await syncWaitTimer(ride.bookingVehicleId, true);
             } catch (err) {
               console.error('[driver-home] postWaiting failed:', err);
               showAlert({ title: 'Error', message: 'Failed to start waiting. Please try again.', buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
@@ -392,7 +439,7 @@ export default function DriverHomeScreen() {
         },
       ],
     });
-  }, [ride, startWaiting, showAlert, sendLocationUpdate]);
+  }, [ride, syncWaitTimer, showAlert, sendLocationUpdate]);
 
   const handleResumeTrip = useCallback(() => {
     showAlert({
@@ -422,9 +469,9 @@ export default function DriverHomeScreen() {
 
   // ── Stop arrived / skip handlers ─────────────────────────────────────────
 
-  const handleArrivedAtStop = useCallback(async () => {
+  const executeArrivedAtStop = useCallback(async () => {
     const waypointId = activeWaypointResult.waypointId;
-    if (!ride?.bookingVehicleId || isArrivingAtStop || waypointId === null) return;
+    if (!ride?.bookingVehicleId || waypointId === null) return;
     setIsArrivingAtStop(true);
     try {
       await postArrivedAtStop(ride.bookingVehicleId, waypointId);
@@ -434,17 +481,29 @@ export default function DriverHomeScreen() {
       console.error('[driver-home] postArrivedAtStop failed:', err);
       showAlert({
         title: 'Error',
-        message: 'Failed to confirm stop arrival. Please try again.',
+        message: getErrorMessage(err, 'Failed to confirm stop arrival. Please try again.'),
         buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }],
       });
     } finally {
       setIsArrivingAtStop(false);
     }
-  }, [ride, isArrivingAtStop, activeWaypointResult.waypointId, sendLocationUpdate, refetchBooking, showAlert]);
+  }, [ride, activeWaypointResult.waypointId, sendLocationUpdate, refetchBooking, showAlert]);
 
-  const handleSkipStop = useCallback(async () => {
+  const handleArrivedAtStop = useCallback(() => {
+    if (isArrivingAtStop || isSkippingStop || activeWaypointResult.waypointId === null) return;
+    showAlert({
+      title: 'Confirm Arrival',
+      message: 'Are you sure you have arrived at this stop?',
+      buttons: [
+        { text: 'Cancel', onPress: () => {}, type: 'secondary' },
+        { text: 'Confirm', onPress: executeArrivedAtStop, type: 'primary' },
+      ],
+    });
+  }, [isArrivingAtStop, isSkippingStop, activeWaypointResult.waypointId, showAlert, executeArrivedAtStop]);
+
+  const executeSkipStop = useCallback(async () => {
     const waypointId = activeWaypointResult.waypointId;
-    if (!ride?.bookingVehicleId || isSkippingStop || waypointId === null) return;
+    if (!ride?.bookingVehicleId || waypointId === null) return;
     setIsSkippingStop(true);
     try {
       await postSkipStop(ride.bookingVehicleId, waypointId);
@@ -454,13 +513,25 @@ export default function DriverHomeScreen() {
       console.error('[driver-home] postSkipStop failed:', err);
       showAlert({
         title: 'Error',
-        message: 'Failed to skip stop. Please try again.',
+        message: getErrorMessage(err, 'Failed to skip stop. Please try again.'),
         buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }],
       });
     } finally {
       setIsSkippingStop(false);
     }
-  }, [ride, isSkippingStop, activeWaypointResult.waypointId, sendLocationUpdate, refetchBooking, showAlert]);
+  }, [ride, activeWaypointResult.waypointId, sendLocationUpdate, refetchBooking, showAlert]);
+
+  const handleSkipStop = useCallback(() => {
+    if (isArrivingAtStop || isSkippingStop || activeWaypointResult.waypointId === null) return;
+    showAlert({
+      title: 'Confirm Skip',
+      message: 'Are you sure you want to skip this stop?',
+      buttons: [
+        { text: 'Cancel', onPress: () => {}, type: 'secondary' },
+        { text: 'Confirm', onPress: executeSkipStop, type: 'primary' },
+      ],
+    });
+  }, [isArrivingAtStop, isSkippingStop, activeWaypointResult.waypointId, showAlert, executeSkipStop]);
 
   // ── Extra charge handlers ─────────────────────────────────────────────────
 

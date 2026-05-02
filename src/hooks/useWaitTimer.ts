@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { formatCountdown } from '../utils/timeUtils';
+import { formatCountdown, formatHHMMSS } from '../utils/timeUtils';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -11,67 +11,112 @@ const FREE_WAIT_SECONDS = 180; // 3 minutes free wait per trip
  * Manages wait-timer state for an active ride — backend-driven design.
  *
  * Design:
- *   - `currentSeconds`       → live timer value, initialised from the backend's
- *                              `totalWaitingSeconds` and incremented every second.
- *   - `totalWaitingSeconds`  → snapshot of the backend value at the moment wait
- *                              was started; used for billing decisions.
- *   - `isFreeTimeExceeded`   → true when totalWaitingSeconds ≥ FREE_WAIT_SECONDS.
+ *   - `currentSeconds`        → live timer value, seeded from backend's
+ *                               `totalWaitingSeconds` and incremented every second.
+ *   - `totalWaitingSeconds`   → snapshot of the backend value at wait-start;
+ *                               drives billing threshold decisions.
+ *   - `formattedWaitingTime`  → HH:mm:ss string; prefers the backend-supplied
+ *                               `formattedWaitingTime` when freshly synced,
+ *                               otherwise computed locally from `currentSeconds`.
+ *   - `isFreeTimeExceeded`    → true when totalWaitingSeconds ≥ FREE_WAIT_SECONDS.
  *
  * Session lifecycle:
- *   startWaiting(n)  → set currentSeconds = n → start 1-s interval ticking up
- *   stopWaiting()    → stop interval → currentSeconds freezes (billing snapshot)
- *   resetTimer()     → full teardown (called at trip end)
+ *   startWaiting(n)         → seed currentSeconds = n → start 1-s interval
+ *   syncFromBackend(n, fmt) → re-seed currentSeconds without stopping timer
+ *                             (use on screen focus / app foreground to prevent drift)
+ *   stopWaiting()           → pause interval; currentSeconds frozen for display
+ *   resetTimer()            → full teardown (call at trip end)
  *
  * Guarantees:
  *   - Only ONE interval ever runs. startWaiting clears any stale interval first.
- *   - Timer never starts without an explicit startWaiting(n) call — the caller
- *     must receive API success before invoking this.
+ *   - Timer never starts without an explicit startWaiting(n) call.
+ *   - syncFromBackend is a no-op when not waiting (safe to call unconditionally).
  *
  * Extensibility:
- *   - totalWaitingSeconds can feed dynamic surcharge calculations.
- *   - Persist currentSeconds to AsyncStorage between app backgrounding.
- *   - Replace the interval with a server-side polling mechanism.
+ *   - totalWaitingSeconds feeds dynamic surcharge calculations.
+ *   - Replace interval with server-side polling for multi-device sync.
  */
 export function useWaitTimer() {
   const [isWaiting, setIsWaiting] = useState(false);
+  const [timerRunning, setTimerRunning] = useState(false);
+
   /**
-   * Live timer value — starts from the backend totalWaitingSeconds and
-   * increments by 1 every second while waiting.
+   * Live timer value — seeded from backend totalWaitingSeconds and
+   * incremented every second while timerRunning is true.
    */
   const [currentSeconds, setCurrentSeconds] = useState(0);
+
   /**
    * Snapshot of the backend's totalWaitingSeconds at wait-start time.
-   * Never decreases; drives the free-wait billing threshold check.
+   * Never decrements; drives the free-wait billing threshold check.
    */
   const [totalWaitingSeconds, setTotalWaitingSeconds] = useState(0);
 
+  /**
+   * Backend-supplied formatted string — preferred for display when present.
+   * Cleared after first local tick so the local counter takes over seamlessly.
+   */
+  const [backendFormattedTime, setBackendFormattedTime] = useState<string | null>(null);
+
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Derived
+  // ── Derived values ──────────────────────────────────────────────────────────
+
   const isFreeTimeExceeded = totalWaitingSeconds >= FREE_WAIT_SECONDS;
   const remainingFreeWaitTime = Math.max(0, FREE_WAIT_SECONDS - totalWaitingSeconds);
+  /** mm:ss — kept for legacy callers */
   const formattedTime = formatCountdown(currentSeconds);
+  /** HH:mm:ss — preferred for UI; uses backend string when freshly synced */
+  const formattedWaitingTime = backendFormattedTime ?? formatHHMMSS(currentSeconds);
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  const clearTimer = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  const startInterval = useCallback(() => {
+    clearTimer();
+    intervalRef.current = setInterval(() => {
+      setBackendFormattedTime(null); // hand off to local counter after first tick
+      setCurrentSeconds((prev) => prev + 1);
+    }, 1000);
+    setTimerRunning(true);
+  }, [clearTimer]);
+
+  // ── Public API ──────────────────────────────────────────────────────────────
 
   /**
    * Begin a wait session starting from `initialSeconds`.
-   *
-   * `initialSeconds` MUST come from the backend's `totalWaitingSeconds` so the
-   * timer reflects cumulative wait time across all sessions for this booking.
-   * This function must only be called AFTER a successful API response.
+   * `initialSeconds` MUST come from the backend's `totalWaitingSeconds`.
+   * Only call after a successful postWaiting + getWaitingTimer response.
    */
   const startWaiting = useCallback(
-    (initialSeconds: number) => {
+    (initialSeconds: number, backendFmt?: string) => {
       if (isWaiting) return;
-      // Defensive: clear any stale interval before starting a new one
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
       setCurrentSeconds(initialSeconds);
       setTotalWaitingSeconds(initialSeconds);
+      setBackendFormattedTime(backendFmt ?? null);
       setIsWaiting(true);
-      intervalRef.current = setInterval(() => {
-        setCurrentSeconds((prev) => prev + 1);
-      }, 1000);
+      startInterval();
+    },
+    [isWaiting, startInterval],
+  );
+
+  /**
+   * Re-seed the running timer from a fresh backend value without stopping it.
+   * Call on screen focus and app foreground to prevent clock drift.
+   * Safe to call when not waiting — it's a no-op in that case.
+   */
+  const syncFromBackend = useCallback(
+    (seconds: number, backendFmt?: string) => {
+      if (!isWaiting) return;
+      setCurrentSeconds(seconds);
+      setTotalWaitingSeconds(seconds);
+      setBackendFormattedTime(backendFmt ?? null);
     },
     [isWaiting],
   );
@@ -79,35 +124,30 @@ export function useWaitTimer() {
   /** Stop the current wait session. currentSeconds is preserved for display. */
   const stopWaiting = useCallback(() => {
     if (!isWaiting) return;
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    clearTimer();
     setIsWaiting(false);
-    // currentSeconds intentionally NOT reset — shows the frozen session value
-  }, [isWaiting]);
+    setTimerRunning(false);
+  }, [isWaiting, clearTimer]);
 
-  /** Full reset — call this at trip end. */
+  /** Full reset — call at trip end. */
   const resetTimer = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    clearTimer();
     setIsWaiting(false);
+    setTimerRunning(false);
     setCurrentSeconds(0);
     setTotalWaitingSeconds(0);
-  }, []);
+    setBackendFormattedTime(null);
+  }, [clearTimer]);
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, []);
+    return () => clearTimer();
+  }, [clearTimer]);
 
   return {
     isWaiting,
-    /** Live timer seconds — initialised from backend value, increments every second. */
+    timerRunning,
+    /** Live timer seconds — seeded from backend, increments every second. */
     currentSeconds,
     /** @deprecated alias for currentSeconds — kept for existing callers. */
     elapsedTime: currentSeconds,
@@ -119,9 +159,12 @@ export function useWaitTimer() {
     isFreeTimeExceeded,
     /** Billing signal — ready for surcharge logic. */
     isExtraChargeApplicable: isFreeTimeExceeded,
-    /** Pre-formatted "mm:ss" string of currentSeconds. */
+    /** mm:ss formatted string — kept for WaitTimerDisplay (legacy). */
     formattedTime,
+    /** HH:mm:ss formatted string — preferred for display. */
+    formattedWaitingTime,
     startWaiting,
+    syncFromBackend,
     stopWaiting,
     resetTimer,
     /** Alias kept for any existing callers. */
