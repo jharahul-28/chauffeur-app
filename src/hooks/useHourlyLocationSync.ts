@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import { getCurrentLocation } from '../services/locationService';
 import { updateDriverLocation } from '../services/rideService';
-import { setActiveBookingVehicleId, removeActiveBookingVehicleId, getActiveBookingVehicleId } from '../storage/tokenStorage';
+import { 
+  setActiveBookingVehicleId, 
+  removeActiveBookingVehicleId, 
+  getActiveBookingVehicleId,
+  getRideStartTime,
+  setRideStartTimeStorage 
+} from '../storage/tokenStorage';
 import * as Location from 'expo-location';
 import { LOCATION_TASK_NAME } from '../services/locationTask';
 import { useLocationStore } from '../state/useLocationStore';
@@ -84,6 +90,7 @@ export function useHourlyLocationSync(
           rideStartTime: response.rideStartTime,
           arrived: response.arrived ?? false,
         });
+        setRideStartTimeStorage(response.rideStartTime);
       }
     } catch (err) {
       console.error('[useHourlyLocationSync] tick failed, will retry:', err);
@@ -94,6 +101,13 @@ export function useHourlyLocationSync(
 
   useEffect(() => {
     if (!bookingVehicleId) return;
+    
+    // 0. Prefetch from persistent storage for instant timer load
+    getRideStartTime().then(time => {
+      if (time && !useLocationStore.getState().rideStartTime) {
+        useLocationStore.getState().setRideStartTime(time);
+      }
+    });
 
     const startBackgroundSync = async () => {
       try {
@@ -129,7 +143,7 @@ export function useHourlyLocationSync(
         }
 
         await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-          accuracy: Location.Accuracy.High,
+          accuracy: Location.Accuracy.BestForNavigation,
           timeInterval: SYNC_INTERVAL_MS,
           distanceInterval: 0, 
           foregroundService: {
@@ -138,7 +152,7 @@ export function useHourlyLocationSync(
             notificationColor: '#EDB96D',
           },
           pausesUpdatesAutomatically: false,
-          deferredUpdatesInterval: SYNC_INTERVAL_MS,
+          deferredUpdatesInterval: 0,
           deferredUpdatesDistance: 0,
         });
 

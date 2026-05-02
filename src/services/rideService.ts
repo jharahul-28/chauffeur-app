@@ -132,3 +132,8 @@ export const updateDriverLocation = (
             throw err;
         });
 };
+/** Fetches the current cumulative waiting time for an active ride. */
+export const fetchWaitingTimer = (bookingVehicleId: string): Promise<WaitingResponse> =>
+    apiClient.get<WaitingResponse>(`${base(bookingVehicleId)}/waiting-timer`).then((res) => {
+        return res.data;
+    });

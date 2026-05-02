@@ -70,4 +70,13 @@ export interface BookingDetailResponse {
   waypoints: Waypoint[];
   /** Present only when tripType === 'HOURLY_RENTALS' */
   hourlyPackage?: HourlyPackage;
+  /** Assignments/Vehicles allocated to this booking. */
+  vehicles?: {
+    id: number;
+    status: string;
+    vehicleNumber: string;
+    rideStartTime: string | null;
+    hourlyPackage?: HourlyPackage;
+    metadata?: any;
+  }[];
 }

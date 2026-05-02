@@ -28,7 +28,7 @@ export function useBookingDetail(bookingId: string | undefined): UseBookingDetai
     }, []);
 
     useEffect(() => {
-        if (!bookingId) {
+        if (!bookingId || bookingId === '0') {
             setIsLoading(false);
             return;
         }

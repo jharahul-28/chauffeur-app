@@ -71,7 +71,7 @@ export function useLocationSync(bookingVehicleId: string | undefined, options?: 
       }
 
       await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.BestForNavigation,
         timeInterval: 30000, // 30 seconds
         distanceInterval: 0, // We use time-based throttling in the task now
         // Android Specific: Keeps the app process alive after kill
@@ -81,7 +81,7 @@ export function useLocationSync(bookingVehicleId: string | undefined, options?: 
           notificationColor: '#FFC107',
         },
         pausesUpdatesAutomatically: false,
-        deferredUpdatesInterval: 30000,
+        deferredUpdatesInterval: 0,
         deferredUpdatesDistance: 0,
       });
 

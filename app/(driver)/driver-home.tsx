@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -41,6 +41,7 @@ import {
   postContinue,
   postEndRide,
 } from '../../src/services/rideService';
+import { setRideStartTimeStorage, removeRideStartTime } from '../../src/storage/tokenStorage';
 import { canEndTrip } from '../../src/utils/tripGuard';
 import { getErrorMessage } from '../../src/utils/apiErrorParser';
 import { useAlert } from '../../src/context/AlertContext';
@@ -105,28 +106,35 @@ export default function DriverHomeScreen() {
   } = useBookingDetail(bookingId);
 
   // ── Ride state machine ────────────────────────────────────────────────────
-  const { ride, initRide, updateStatus, updateRide, clearRide } = useRideStore();
+  const ride = useRideStore((s) => s.ride);
+  const initRide = useRideStore((s) => s.initRide);
+  const updateStatus = useRideStore((s) => s.updateStatus);
+  const updateRide = useRideStore((s) => s.updateRide);
+  const clearRide = useRideStore((s) => s.clearRide);
+
   const setRideStartTime = useLocationStore((s) => s.setRideStartTime);
 
   // ── Waypoint arrival handler (called by background sync) ───────────────
   const handleBackgroundArrival = useCallback(() => {
     console.log('[driver-home] 🎯 Background arrival detected!');
-    // Only auto-transition if we're still in GOING_TO_PICKUP
     const currentRide = useRideStore.getState().ride;
+    
+    // Only proceed and refetch if we haven't already marked arrival
     if (currentRide && currentRide.status === 'GOING_TO_PICKUP') {
       updateStatus('ARRIVED_AT_PICKUP');
-      // Fire the API call too
       postArrived(currentRide.bookingVehicleId).catch((err) =>
         console.error('[driver-home] background postArrived failed:', err)
       );
+      // Only refetch when we actually arrive the first time
+      refetchBooking();
     }
-    // Refetch booking to sync with latest backend state
-    refetchBooking();
   }, [updateStatus, refetchBooking]);
 
-  const { startSync, stopSync, nextWaypoint, sendLocationUpdate } = useLocationSync(bookingVehicleId, {
+  const syncOptions = useMemo(() => ({
     onArrived: handleBackgroundArrival,
-  });
+  }), [handleBackgroundArrival]);
+
+  const { startSync, stopSync, nextWaypoint, sendLocationUpdate } = useLocationSync(bookingVehicleId, syncOptions);
   const isPickupMode = Boolean(bookingId);
 
   // ── Charges — always sourced from API, never from local state ─────────────
@@ -140,7 +148,8 @@ export default function DriverHomeScreen() {
     startWaiting,
     stopWaiting,
     resetTimer: resetWaitTimer,
-  } = useWaitTimer();
+    syncWithServer,
+  } = useWaitTimer(bookingVehicleId);
 
   const initializedRideIdRef = useRef<string | null>(null);
 
@@ -172,21 +181,24 @@ export default function DriverHomeScreen() {
 
   // For hourly bookings re-entered at OTP_VERIFIED/IN_PROGRESS, redirect immediately
   useEffect(() => {
-    const isHourly = (tripType ?? bookingDetailRide?.tripType) === 'HOURLY_RENTALS';
+    const tripTypeSource = tripType || bookingDetailRide?.tripType || ride?.tripType;
+    const isHourly = tripTypeSource === 'HOURLY_RENTALS';
     const isPostOtp = bookingStatus === 'OTP_VERIFIED' || bookingStatus === 'IN_PROGRESS';
+    
     if (isPickupMode && isHourly && isPostOtp && bookingId && bookingVehicleId) {
+      console.log('[driver-home] 🔄 Redirecting to Hourly Ride screen...');
       stopSync();
       router.replace({
         pathname: '/(driver)/hourly-ride',
         params: {
           bookingId,
           bookingVehicleId,
-          riderName: bookingDetailRide?.riderName ?? '',
-          customerContact: bookingDetailRide?.customerContact || undefined,
+          riderName: (bookingDetailRide?.riderName || ride?.riderName) ?? '',
+          customerContact: bookingDetailRide?.customerContact || ride?.customerContact || undefined,
         },
       });
     }
-  }, [bookingDetailRide, bookingStatus, tripType, isPickupMode, bookingId, bookingVehicleId, stopSync, router]);
+  }, [bookingDetailRide, ride, bookingStatus, tripType, isPickupMode, bookingId, bookingVehicleId, stopSync, router]);
 
   // Fetch charges from API on mount
   useEffect(() => {
@@ -300,6 +312,7 @@ export default function DriverHomeScreen() {
     if (response.rideStartTime) {
       setRideStartTime(response.rideStartTime);
       updateRide({ rideStartTime: response.rideStartTime });
+      setRideStartTimeStorage(response.rideStartTime);
     }
   }, [ride, setRideStartTime, updateRide]);
 
@@ -322,6 +335,7 @@ export default function DriverHomeScreen() {
 
     try {
       await postEndRide(ride.bookingVehicleId);
+      await removeRideStartTime();
       stopSync(); // Stop tracking immediately to avoid pings for ended ride
       resetWaitTimer();
       updateStatus('TRIP_COMPLETED');
@@ -361,9 +375,13 @@ export default function DriverHomeScreen() {
             if (!ride?.bookingVehicleId) return;
             try {
               logWaitEvent('WAIT_START', ride.id);
-              const data = await postWaiting(ride.bookingVehicleId);
+              await postWaiting(ride.bookingVehicleId);
+              // Authoritative sync from /waiting-timer API
+              const data = await syncWithServer();
               sendLocationUpdate();
-              startWaiting(data.totalWaitingSeconds);
+              if (data) {
+                startWaiting(data.totalWaitingSeconds);
+              }
             } catch (err) {
               console.error('[driver-home] postWaiting failed:', err);
               showAlert({ title: 'Error', message: 'Failed to start waiting. Please try again.', buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
