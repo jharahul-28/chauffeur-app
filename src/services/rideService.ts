@@ -63,6 +63,35 @@ export const postContinue = (bookingVehicleId: string): Promise<void> =>
         console.log('[rideService] continue ✓', bookingVehicleId);
     });
 
+/**
+ * Called when the driver taps "Arrived" at an intermediate STOP.
+ * waypointId is the stable id from the booking waypoint list — resolved via
+ * waypointMapper before this call is made.
+ */
+export const postArrivedAtStop = (
+    bookingVehicleId: string,
+    waypointId: number,
+): Promise<void> =>
+    apiClient
+        .post(`${base(bookingVehicleId)}/arrived-at-stop`, null, { params: { waypointId } })
+        .then(() => {
+            console.log('[rideService] arrived-at-stop ✓', bookingVehicleId, 'waypointId:', waypointId);
+        });
+
+/**
+ * Called when the driver taps "Skip" on an intermediate STOP.
+ * waypointId sent as a query param per API spec.
+ */
+export const postSkipStop = (
+    bookingVehicleId: string,
+    waypointId: number,
+): Promise<void> =>
+    apiClient
+        .post(`${base(bookingVehicleId)}/skip-stop`, null, { params: { waypointId } })
+        .then(() => {
+            console.log('[rideService] skip-stop ✓', bookingVehicleId, 'waypointId:', waypointId);
+        });
+
 /** Called when the driver taps "End Trip". */
 export const postEndRide = (bookingVehicleId: string): Promise<void> =>
     apiClient.post(`${base(bookingVehicleId)}/end-ride`).then(() => {

@@ -1,5 +1,5 @@
 import React, { memo, useMemo } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -10,13 +10,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RideStatus, Stoppage, RideStatusEnum } from '../types/ride';
-import { themeColors, bgColors } from '../constants/colors';
+import { themeColors } from '../constants/colors';
 import WaitTimerDisplay from './WaitTimerDisplay';
-import ChargeIconButton from './ChargeIconButton';
-import SlideToConfirm from './SlideToConfirm';
+import BottomActionBar from './BottomActionBar';
+import WaypointRow from './WaypointRow';
+import StopActionButtons from './StopActionButtons';
 import { openNextWaypointInGoogleMaps } from '../utils/googleMapsUrlBuilder';
 import { LatLng } from '../utils/googleMapsUrlBuilder';
 import CallButton from './CallButton';
+import { RawWaypoint, sortWaypoints } from '../utils/waypointUtils';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -61,6 +63,27 @@ export interface PickupDrawerProps {
    * the first location-update tick arrives (GOING_TO_PICKUP state).
    */
   pickupCoord?: LatLng | null;
+  /**
+   * Raw waypoints from the booking detail API — used to render the ordered
+   * route section in the drawer with arrival status.
+   */
+  rawWaypoints?: RawWaypoint[];
+  /**
+   * Index (into sortedWaypoints) of the waypoint the location-update API is
+   * currently targeting. -1 when unknown.
+   */
+  activeWaypointIndex?: number;
+  /** True while the arrived-at-stop API call is in-flight. */
+  isArrivingAtStop?: boolean;
+  /** True while the skip-stop API call is in-flight. */
+  isSkippingStop?: boolean;
+  /**
+   * Resolved waypointId for the active stop — null when mapping failed.
+   * Passed to StopActionButtons to disable actions when id is unknown.
+   */
+  activeStopWaypointId?: number | null;
+  onArrivedAtStop?: () => void;
+  onSkipStop?: () => void;
   onArrivedAtPickup: () => void;
   onEnterOTP: () => void;
   onEndTrip?: () => void;
@@ -106,6 +129,13 @@ const PickupDrawer = memo(function PickupDrawer({
   specialRequest,
   nextWaypointCoord,
   pickupCoord,
+  rawWaypoints,
+  activeWaypointIndex = -1,
+  isArrivingAtStop = false,
+  isSkippingStop = false,
+  activeStopWaypointId = null,
+  onArrivedAtStop,
+  onSkipStop,
   onArrivedAtPickup,
   onEnterOTP,
   onEndTrip,
@@ -124,19 +154,31 @@ const PickupDrawer = memo(function PickupDrawer({
 
   const isTripStarted = rideStatus === RideStatusEnum.TRIP_STARTED;
 
-  // Use live next-waypoint when available; fall back to pickup coord for pre-trip
   const mapsTarget: LatLng | null = nextWaypointCoord ?? pickupCoord ?? null;
 
   const hasSpecialRequest =
     (specialRequest?.beverages?.length ?? 0) > 0 || !!specialRequest?.other;
 
-  // Dynamic expanded height: accounts for stoppages and special request lines
+  // Sort rawWaypoints by sequence for ordered route display
+  const sortedWaypoints = useMemo(() => {
+    if (!rawWaypoints || rawWaypoints.length === 0) return [];
+    return sortWaypoints(rawWaypoints);
+  }, [rawWaypoints]);
+
+  // Dynamic expanded height: accounts for waypoints and special request lines
   const expandedHeight = useMemo(() => {
+    const waypointCount = sortedWaypoints.length || (stoppages.length + 2);
+    // Extra height when stop action buttons are visible (Arrived / Skip / Map row)
+    const hasActiveStop =
+      isTripStarted &&
+      activeWaypointIndex >= 0 &&
+      sortedWaypoints[activeWaypointIndex]?.waypointType === 'STOP';
+    const stopActionHeight = hasActiveStop ? 52 : 0;
     if (isTripStarted) {
-      return 460 + stoppages.length * 38;
+      return 460 + stoppages.length * 38 + stopActionHeight;
     }
-    return 340 + (hasSpecialRequest ? 56 : 0);
-  }, [isTripStarted, stoppages.length, hasSpecialRequest]);
+    return 340 + (hasSpecialRequest ? 56 : 0) + Math.max(0, waypointCount - 3) * 38;
+  }, [isTripStarted, stoppages.length, hasSpecialRequest, sortedWaypoints, activeWaypointIndex]);
 
   const maxTranslateY = expandedHeight - COLLAPSED_HEIGHT;
 
@@ -175,7 +217,11 @@ const PickupDrawer = memo(function PickupDrawer({
     [RideStatusEnum.TRIP_COMPLETED]: 'Trip Completed',
   };
   const statusLabel = isWaiting ? 'Waiting...' : STATUS_LABELS[rideStatus];
-  const statusColor = isWaiting ? themeColors.warning : isTripStarted ? themeColors.success : themeColors.goldAccent;
+  const statusColor = isWaiting
+    ? themeColors.warning
+    : isTripStarted
+    ? themeColors.success
+    : themeColors.goldAccent;
 
   return (
     <Animated.View
@@ -185,108 +231,142 @@ const PickupDrawer = memo(function PickupDrawer({
         drawerAnimStyle,
       ]}
     >
-      {/* ── Drag handle ────────────────────────────────────────────────────── */}
+      {/* ── Drag handle ──────────────────────────────────────────────────────── */}
       <GestureDetector gesture={panGesture}>
         <View style={styles.handleArea}>
           <View style={styles.handle} />
         </View>
       </GestureDetector>
 
-      {/* ── Status label ───────────────────────────────────────────────────── */}
+      {/* ── Status label ─────────────────────────────────────────────────────── */}
       <View style={styles.statusRow}>
         <View style={[styles.statusPulseDot, { backgroundColor: statusColor }]} />
         <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
       </View>
 
-      {/* ── Rider row ──────────────────────────────────────────────────────── */}
-      <View style={styles.riderRow}>
+      {/* ── HEADER ROW: Customer name (left) + Call icon (right) ─────────────── */}
+      <View style={styles.headerRow}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{initials}</Text>
         </View>
-        <View style={styles.riderInfo}>
-          <View style={styles.riderNameRow}>
-            <Text style={styles.riderName}>{riderName}</Text>
-            {bookingReference ? (
-              <Text style={styles.bookingRef}>{bookingReference}</Text>
-            ) : null}
-          </View>
-          <View style={styles.addressRow}>
-            <View style={styles.pickupDot} />
-            <Text style={styles.addressText} numberOfLines={1}>
-              {pickupLocationText}
-            </Text>
-          </View>
-        </View>
+        <Text style={styles.riderName} numberOfLines={1}>{riderName}</Text>
+        <CallButton phoneNumber={customerContact} />
       </View>
 
-      {/* ── CTA button ─────────────────────────────────────────────────────── */}
-      {isTripStarted ? (
-        <>
-          {/* Wait timer — visible only while waiting */}
-          {isWaiting && (
-            <WaitTimerDisplay
-              elapsedSeconds={elapsedWaitTime}
-              isFreeTimeExceeded={isFreeTimeExceeded}
+      {/* ── ROUTE DETAILS SECTION ────────────────────────────────────────────── */}
+      {sortedWaypoints.length > 0 ? (
+        <View style={styles.routeSection}>
+          {sortedWaypoints.map((wp, index) => {
+            const isActive = index === activeWaypointIndex;
+            const showActions =
+              isActive && wp.waypointType === 'STOP' && isTripStarted;
+            const showMaps =
+              isActive &&
+              isTripStarted &&
+              (wp.waypointType === 'STOP' || wp.waypointType === 'DROP');
+            return (
+              <WaypointRow
+                key={wp.id}
+                type={wp.waypointType}
+                address={wp.address}
+                sequence={wp.waypointSequence}
+                arrivedAt={wp.arrivedAt}
+                isLast={index === sortedWaypoints.length - 1}
+                isActive={isActive}
+                onOpenMaps={
+                  showMaps
+                    ? () => openNextWaypointInGoogleMaps({ latitude: wp.latitude, longitude: wp.longitude })
+                    : undefined
+                }
+                actionSlot={
+                  showActions ? (
+                    <StopActionButtons
+                      waypointId={activeStopWaypointId}
+                      isArriving={isArrivingAtStop}
+                      isSkipping={isSkippingStop}
+                      onArrived={onArrivedAtStop ?? (() => {})}
+                      onSkip={onSkipStop ?? (() => {})}
+                    />
+                  ) : undefined
+                }
+              />
+            );
+          })}
+        </View>
+      ) : (
+        /* Fallback: no rawWaypoints provided — render from text fields */
+        <View style={styles.routeSection}>
+          <WaypointRow
+            type="PICKUP"
+            address={pickupLocationText}
+            sequence={1}
+            arrivedAt={
+              rideStatus !== RideStatusEnum.GOING_TO_PICKUP ? 'arrived' : null
+            }
+            isLast={stoppages.length === 0 && !destinationText}
+          />
+          {stoppages.map((stop, index) => (
+            <WaypointRow
+              key={stop.id}
+              type="STOP"
+              address={stop.label ?? `Stop ${index + 1}`}
+              sequence={index + 2}
+              arrivedAt={null}
+              isLast={index === stoppages.length - 1 && !destinationText}
+            />
+          ))}
+          {destinationText && (
+            <WaypointRow
+              type="DROP"
+              address={destinationText}
+              sequence={stoppages.length + 2}
+              arrivedAt={null}
+              isLast
             />
           )}
+        </View>
+      )}
 
-          {/* End Trip */}
-          <View style={styles.buttonWrapper}>
-            <SlideToConfirm
-              text="Slide to End Trip"
-              onComplete={onEndTrip ?? (() => { })}
-              loading={isEndingTrip}
-              disabled={isEndingTrip}
-              variant="danger"
-              accessibilityLabel="Slide to end the trip"
-            />
-          </View>
+      {/* ── BOOKING REFERENCE — below route section ──────────────────────────── */}
+      {bookingReference && (
+        <View style={styles.bookingRefRow}>
+          <Ionicons name="document-text-outline" size={12} color="#8E8E93" />
+          <Text style={styles.bookingRef}>{bookingReference}</Text>
+        </View>
+      )}
 
-          {/* Wait / Resume  +  Charges icon  +  Google Maps — side by side */}
-          <View style={[styles.secondaryRow, styles.waitButtonWrapper]}>
-            <Pressable
-              style={styles.secondaryButtonFlex}
-              onPress={isWaiting ? onResumeTrip : onWait}
-            >
-              <View style={[styles.waitButton, isWaiting && styles.waitButtonActive]}>
-                <Ionicons
-                  name={isWaiting ? 'play-outline' : 'pause-outline'}
-                  size={16}
-                  color={isWaiting ? '#FF9F0A' : '#8E8E93'}
-                  style={styles.ctaIcon}
-                />
-                <Text style={[styles.waitButtonText, isWaiting && styles.waitButtonTextActive]}>
-                  {isWaiting ? 'Resume' : 'Wait'}
-                </Text>
-              </View>
-            </Pressable>
+      {/* ── WAIT TIMER — visible whenever waiting ────────────────────────────── */}
+      {isWaiting && (
+        <WaitTimerDisplay
+          elapsedSeconds={elapsedWaitTime}
+          isFreeTimeExceeded={isFreeTimeExceeded}
+        />
+      )}
 
-            <ChargeIconButton count={chargeCount} onPress={onOpenChargesSummary ?? (() => { })} />
-
-            <CallButton phoneNumber={customerContact} />
-
-            {mapsTarget && (
-              <Pressable
-                style={styles.mapsIconButton}
-                onPress={() => openNextWaypointInGoogleMaps(mapsTarget)}
-                accessibilityRole="button"
-                accessibilityLabel="Open next destination in Google Maps"
-              >
-                <Ionicons name="navigate" size={18} color="#4285F4" />
-              </Pressable>
-            )}
-          </View>
-        </>
+      {/* ── PRIMARY ACTION (bottom action bar) ───────────────────────────────── */}
+      {isTripStarted ? (
+        <BottomActionBar
+          slideText="Slide to End Trip"
+          slideVariant="danger"
+          onSlideComplete={onEndTrip ?? (() => {})}
+          slideLoading={isEndingTrip}
+          slideDisabled={isEndingTrip}
+          showUtilRow
+          isWaiting={isWaiting}
+          onWaitResume={isWaiting ? onResumeTrip : onWait}
+          chargeCount={chargeCount}
+          onOpenCharges={onOpenChargesSummary}
+        />
       ) : rideStatus === RideStatusEnum.GOING_TO_PICKUP ? (
         <View style={styles.ctaRow}>
           <View style={styles.ctaFlex}>
-            <SlideToConfirm
-              text="Arrived at PickUp"
-              onComplete={onArrivedAtPickup}
-              loading={isArrivingAtPickup}
-              disabled={isArrivingAtPickup}
-              variant="primary"
-              accessibilityLabel="Slide to confirm arrival at pickup"
+            <BottomActionBar
+              slideText="Arrived at Pickup"
+              slideVariant="primary"
+              onSlideComplete={onArrivedAtPickup}
+              slideLoading={isArrivingAtPickup}
+              slideDisabled={isArrivingAtPickup}
+              showWaitButton={false}
             />
           </View>
           {mapsTarget && (
@@ -326,42 +406,10 @@ const PickupDrawer = memo(function PickupDrawer({
         </View>
       )}
 
-      {/* ── Below-fold: expanded-only details ──────────────────────────────── */}
+      {/* ── Below-fold: expanded-only details ────────────────────────────────── */}
       <View style={styles.divider} />
 
-      {isTripStarted ? (
-        /* ── Trip started: pending stops first, then final destination ── */
-        <View style={styles.tripDetails}>
-          {/* Pending Stops — shown before destination per UX spec */}
-          {stoppages.length > 0 && (
-            <View style={styles.tripSection}>
-              <Text style={styles.tripSectionLabel}>PENDING STOPS ({stoppages.length})</Text>
-              {stoppages.map((stop, index) => (
-                <View key={stop.id} style={styles.stopRow}>
-                  <View style={styles.stopNumberBadge}>
-                    <Text style={styles.stopNumber}>{index + 1}</Text>
-                  </View>
-                  <Text style={styles.stopLabel} numberOfLines={1}>
-                    {stop.label ?? `Stop ${index + 1}`}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* Final Destination */}
-          <View style={styles.tripSection}>
-            <Text style={styles.tripSectionLabel}>FINAL DESTINATION</Text>
-            <View style={styles.tripLocationRow}>
-              <View style={styles.destDot} />
-              <Text style={styles.tripLocationText} numberOfLines={2}>
-                {destinationText ?? '—'}
-              </Text>
-            </View>
-          </View>
-        </View>
-      ) : (
-        /* ── Pre-trip: special remarks + special request + call + ETA ── */
+      {!isTripStarted && (
         <>
           {specialRemarks ? (
             <View style={styles.remarksBox}>
@@ -390,16 +438,12 @@ const PickupDrawer = memo(function PickupDrawer({
             </View>
           )}
 
-          <View style={styles.actionsRow}>
-            <CallButton phoneNumber={customerContact} />
-
-            <View style={styles.etaContainer}>
-              <Text style={styles.etaLabel}>EST. ARRIVAL</Text>
-              <Text style={styles.etaValue}>{estimatedTime}</Text>
-              {distance ? (
-                <Text style={styles.distanceText}>{distance}</Text>
-              ) : null}
-            </View>
+          <View style={styles.etaContainer}>
+            <Text style={styles.etaLabel}>EST. ARRIVAL</Text>
+            <Text style={styles.etaValue}>{estimatedTime}</Text>
+            {distance ? (
+              <Text style={styles.distanceText}>{distance}</Text>
+            ) : null}
           </View>
         </>
       )}
@@ -445,7 +489,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   statusPulseDot: {
     width: 8,
@@ -457,17 +501,48 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.3,
   },
-  riderRow: {
+
+  // ── Header row ─────────────────────────────────────────────────────────────
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     marginBottom: 16,
   },
-  riderNameRow: {
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(237, 185, 109, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(237, 185, 109, 0.3)',
+    flexShrink: 0,
+  },
+  avatarText: {
+    color: '#EDB96D',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  riderName: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+
+  // ── Route section ──────────────────────────────────────────────────────────
+  routeSection: {
+    marginBottom: 10,
+  },
+
+  // ── Booking reference ──────────────────────────────────────────────────────
+  bookingRefRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
+    gap: 5,
+    marginBottom: 12,
   },
   bookingRef: {
     color: '#8E8E93',
@@ -475,57 +550,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0.3,
   },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(237, 185, 109, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(237, 185, 109, 0.3)',
-  },
-  avatarText: {
-    color: '#EDB96D',
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  riderInfo: {
-    flex: 1,
-    gap: 5,
-  },
-  riderName: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  addressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  pickupDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
-    backgroundColor: '#30D158',
-    flexShrink: 0,
-  },
-  addressText: {
-    color: '#8E8E93',
-    fontSize: 13,
-    flex: 1,
-  },
-  buttonWrapper: {
-    width: '100%',
-    marginBottom: 16,
-  },
-  // Row that holds a CTA + optional maps icon button side-by-side
+
+  // ── CTA rows ───────────────────────────────────────────────────────────────
   ctaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   ctaFlex: {
     flex: 1,
@@ -547,46 +578,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-  waitButtonWrapper: {
-    marginTop: -8,
-  },
-  secondaryRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  secondaryButtonFlex: {
-    flex: 1,
-  },
-  waitButton: {
-    paddingVertical: 13,
-    borderRadius: 16,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#2C2C2E',
+  mapsIconButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: 'rgba(66, 133, 244, 0.12)',
     borderWidth: 1,
-    borderColor: '#3A3A3C',
+    borderColor: 'rgba(66, 133, 244, 0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  waitButtonActive: {
-    backgroundColor: 'rgba(255, 159, 10, 0.10)',
-    borderColor: 'rgba(255, 159, 10, 0.35)',
-  },
-  waitButtonText: {
-    color: '#8E8E93',
-    fontSize: 15,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
-  waitButtonTextActive: {
-    color: '#FF9F0A',
-  },
+
+  // ── Divider ────────────────────────────────────────────────────────────────
   divider: {
     height: 1,
     backgroundColor: '#2C2C2E',
-    marginBottom: 16,
+    marginTop: 14,
+    marginBottom: 14,
   },
-  // Pre-trip: structured special request
+
+  // ── Pre-trip special request ───────────────────────────────────────────────
   specialRequestBox: {
     backgroundColor: 'rgba(100, 210, 255, 0.07)',
     borderRadius: 10,
@@ -611,7 +622,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // Pre-trip: special remarks
+  // ── Pre-trip special remarks ───────────────────────────────────────────────
   remarksBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -632,25 +643,9 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // Pre-trip: call + ETA
-  actionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  mapsIconButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: 'rgba(66, 133, 244, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(66, 133, 244, 0.28)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  // ── ETA ───────────────────────────────────────────────────────────────────
   etaContainer: {
-    flex: 1,
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
   },
   etaLabel: {
     color: '#8E8E93',
@@ -669,65 +664,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     marginTop: 2,
-  },
-
-  // Trip started: destination + stoppages
-  tripDetails: {
-    gap: 16,
-  },
-  tripSection: {
-    gap: 8,
-  },
-  tripSectionLabel: {
-    color: '#8E8E93',
-    fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 0.8,
-  },
-  tripLocationRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  destDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#FF453A',
-    marginTop: 3,
-    flexShrink: 0,
-  },
-  tripLocationText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-    flex: 1,
-    lineHeight: 21,
-  },
-  stopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  stopNumberBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(255, 159, 10, 0.18)',
-    borderWidth: 1.5,
-    borderColor: '#FF9F0A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  stopNumber: {
-    color: '#FF9F0A',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  stopLabel: {
-    color: '#D1D1D6',
-    fontSize: 14,
-    flex: 1,
   },
 });

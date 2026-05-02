@@ -6,13 +6,22 @@ import { Coordinate } from '../components/MapViewContainer';
 export type WaypointType = 'PICKUP' | 'STOP' | 'DROP';
 
 export interface RawWaypoint {
+  /** Internal list index fallback — do NOT use for API calls. */
   id: number;
+  /**
+   * The stable `waypointId` from the booking API response.
+   * This is the value that must be sent to arrived-at-stop and skip-stop APIs.
+   */
+  waypointId: number;
   waypointSequence: number;
   waypointType: WaypointType;
   latitude: number;
   longitude: number;
   address: string;
+  /** Google Places ID — primary key for matching against location-update waypoints. */
+  placeId?: string;
   arrivedAt?: string | null;
+  status?: string;
 }
 
 export interface RouteStop extends Coordinate {

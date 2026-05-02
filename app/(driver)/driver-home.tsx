@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -40,7 +40,11 @@ import {
   postWaiting,
   postContinue,
   postEndRide,
+  postArrivedAtStop,
+  postSkipStop,
 } from '../../src/services/rideService';
+import { deriveActiveWaypoint } from '../../src/utils/waypointMapper';
+import { sortWaypoints } from '../../src/utils/waypointUtils';
 import { canEndTrip } from '../../src/utils/tripGuard';
 import { getErrorMessage } from '../../src/utils/apiErrorParser';
 import { useAlert } from '../../src/context/AlertContext';
@@ -85,6 +89,8 @@ export default function DriverHomeScreen() {
 
   const [isEndingTrip, setIsEndingTrip] = useState(false);
   const [isArrivingAtPickup, setIsArrivingAtPickup] = useState(false);
+  const [isArrivingAtStop, setIsArrivingAtStop] = useState(false);
+  const [isSkippingStop, setIsSkippingStop] = useState(false);
 
   const { showAlert } = useAlert();
   const { location, hasPermission, isLoading, error } = useDriverLocation();
@@ -126,6 +132,7 @@ export default function DriverHomeScreen() {
 
   const { startSync, stopSync, nextWaypoint, sendLocationUpdate } = useLocationSync(bookingVehicleId, {
     onArrived: handleBackgroundArrival,
+    onLocationUpdate: refetchBooking,
   });
   const isPickupMode = Boolean(bookingId);
 
@@ -247,6 +254,19 @@ export default function DriverHomeScreen() {
 
   // ── Route points (memoised from raw waypoints) ───────────────────────────
   const routePoints = useRoutePoints(ride?.rawWaypoints);
+
+  // ── Active waypoint (derived from location-update response) ──────────────
+  const locationNextWaypoint = useLocationStore((s) => s.nextWaypoint);
+
+  const sortedRawWaypoints = useMemo(
+    () => sortWaypoints(ride?.rawWaypoints ?? []),
+    [ride?.rawWaypoints],
+  );
+
+  const activeWaypointResult = useMemo(
+    () => deriveActiveWaypoint(locationNextWaypoint, sortedRawWaypoints),
+    [locationNextWaypoint, sortedRawWaypoints],
+  );
 
   const mapMode = ride
     ? ride.status === 'TRIP_STARTED' ? 'trip' : 'pickup'
@@ -399,6 +419,48 @@ export default function DriverHomeScreen() {
       ],
     });
   }, [ride, stopWaiting, showAlert, sendLocationUpdate]);
+
+  // ── Stop arrived / skip handlers ─────────────────────────────────────────
+
+  const handleArrivedAtStop = useCallback(async () => {
+    const waypointId = activeWaypointResult.waypointId;
+    if (!ride?.bookingVehicleId || isArrivingAtStop || waypointId === null) return;
+    setIsArrivingAtStop(true);
+    try {
+      await postArrivedAtStop(ride.bookingVehicleId, waypointId);
+      refetchBooking();
+      sendLocationUpdate();
+    } catch (err) {
+      console.error('[driver-home] postArrivedAtStop failed:', err);
+      showAlert({
+        title: 'Error',
+        message: 'Failed to confirm stop arrival. Please try again.',
+        buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }],
+      });
+    } finally {
+      setIsArrivingAtStop(false);
+    }
+  }, [ride, isArrivingAtStop, activeWaypointResult.waypointId, sendLocationUpdate, refetchBooking, showAlert]);
+
+  const handleSkipStop = useCallback(async () => {
+    const waypointId = activeWaypointResult.waypointId;
+    if (!ride?.bookingVehicleId || isSkippingStop || waypointId === null) return;
+    setIsSkippingStop(true);
+    try {
+      await postSkipStop(ride.bookingVehicleId, waypointId);
+      refetchBooking();
+      sendLocationUpdate();
+    } catch (err) {
+      console.error('[driver-home] postSkipStop failed:', err);
+      showAlert({
+        title: 'Error',
+        message: 'Failed to skip stop. Please try again.',
+        buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }],
+      });
+    } finally {
+      setIsSkippingStop(false);
+    }
+  }, [ride, isSkippingStop, activeWaypointResult.waypointId, sendLocationUpdate, refetchBooking, showAlert]);
 
   // ── Extra charge handlers ─────────────────────────────────────────────────
 
@@ -570,6 +632,13 @@ export default function DriverHomeScreen() {
           specialRequest={ride.specialRequest}
           nextWaypointCoord={nextWaypoint}
           pickupCoord={ride.pickup}
+          rawWaypoints={ride.rawWaypoints}
+          activeWaypointIndex={activeWaypointResult.index}
+          activeStopWaypointId={activeWaypointResult.waypointId}
+          isArrivingAtStop={isArrivingAtStop}
+          isSkippingStop={isSkippingStop}
+          onArrivedAtStop={handleArrivedAtStop}
+          onSkipStop={handleSkipStop}
           onArrivedAtPickup={handleArrivedAtPickup}
           onEnterOTP={handleEnterOTP}
           onEndTrip={handleEndTrip}
