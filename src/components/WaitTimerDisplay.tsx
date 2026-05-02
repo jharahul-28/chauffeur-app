@@ -2,8 +2,6 @@ import React, { memo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { formatCountdown } from '../utils/timeUtils';
 
-// ─── Props ────────────────────────────────────────────────────────────────────
-
 interface WaitTimerDisplayProps {
   /** Seconds elapsed in the current wait session — counts up from 0. */
   elapsedSeconds: number;
@@ -11,16 +9,12 @@ interface WaitTimerDisplayProps {
   isFreeTimeExceeded: boolean;
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 /**
- * Isolated timer display — rendered only while the driver is waiting.
+ * Timer display shown whenever the driver is in a waiting state.
  *
- * Shows elapsed seconds for the current wait session (counts up from 00:00).
- * Once the cumulative 3-minute free allowance is exceeded it switches to a
- * billing-notice state.
- *
- * Kept as a memo'd leaf so the 1-second tick doesn't re-render the whole drawer.
+ * Always renders the elapsed time regardless of whether free time has been
+ * exceeded. When exceeded, the timer turns red and a billing notice appears
+ * below it so the driver is aware extra charges are accruing.
  */
 const WaitTimerDisplay = memo(function WaitTimerDisplay({
   elapsedSeconds,
@@ -28,13 +22,19 @@ const WaitTimerDisplay = memo(function WaitTimerDisplay({
 }: WaitTimerDisplayProps) {
   return (
     <View style={[styles.container, isFreeTimeExceeded && styles.containerExceeded]}>
-      <View style={[styles.dot, isFreeTimeExceeded ? styles.dotExceeded : styles.dotActive]} />
-      {isFreeTimeExceeded ? (
-        <Text style={styles.exceededText}>Extra charges applied</Text>
-      ) : (
-        <View style={styles.countdownRow}>
-          <Text style={styles.label}>Waiting: </Text>
-          <Text style={styles.elapsed}>{formatCountdown(elapsedSeconds)}</Text>
+      {/* Timer row — always visible */}
+      <View style={styles.timerRow}>
+        <View style={[styles.dot, isFreeTimeExceeded ? styles.dotExceeded : styles.dotActive]} />
+        <Text style={styles.label}>Waiting: </Text>
+        <Text style={[styles.elapsed, isFreeTimeExceeded && styles.elapsedExceeded]}>
+          {formatCountdown(elapsedSeconds)}
+        </Text>
+      </View>
+
+      {/* Extra-charges notice — shown only after free time is exceeded */}
+      {isFreeTimeExceeded && (
+        <View style={styles.noticeRow}>
+          <Text style={styles.noticeText}>Extra charges are being applied</Text>
         </View>
       )}
     </View>
@@ -43,13 +43,8 @@ const WaitTimerDisplay = memo(function WaitTimerDisplay({
 
 export default WaitTimerDisplay;
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
     backgroundColor: 'rgba(255, 159, 10, 0.10)',
     borderRadius: 10,
     paddingVertical: 9,
@@ -57,10 +52,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 159, 10, 0.25)',
+    gap: 4,
   },
   containerExceeded: {
     backgroundColor: 'rgba(255, 69, 58, 0.10)',
-    borderColor: 'rgba(255, 69, 58, 0.25)',
+    borderColor: 'rgba(255, 69, 58, 0.30)',
+  },
+  timerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   dot: {
     width: 7,
@@ -74,10 +75,6 @@ const styles = StyleSheet.create({
   dotExceeded: {
     backgroundColor: '#FF453A',
   },
-  countdownRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   label: {
     color: '#8E8E93',
     fontSize: 13,
@@ -88,9 +85,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  exceededText: {
+  elapsedExceeded: {
     color: '#FF453A',
-    fontSize: 13,
+  },
+  noticeRow: {
+    paddingLeft: 15,
+  },
+  noticeText: {
+    color: '#FF6B6B',
+    fontSize: 12,
     fontWeight: '600',
+    letterSpacing: 0.1,
   },
 });

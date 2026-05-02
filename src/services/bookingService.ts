@@ -115,13 +115,16 @@ export function mapBookingDetailToRide(
         }));
 
     const rawWaypoints: RawWaypoint[] = sorted.map((w, i) => ({
-        id: w.id ?? i,
+        id: w.waypointId ?? w.id ?? i,
+        waypointId: w.waypointId ?? w.id ?? i,
         waypointSequence: w.waypointSequence ?? i,
         waypointType: wpType(w) as RawWaypoint['waypointType'],
         latitude: w.latitude,
         longitude: w.longitude,
         address: w.address,
+        placeId: w.placeId || undefined,
         arrivedAt: w.arrivedAt ?? null,
+        status: w.status || undefined,
     }));
 
     return {

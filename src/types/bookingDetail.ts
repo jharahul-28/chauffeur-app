@@ -19,14 +19,19 @@ export interface HourlyPackage {
 export type WaypointType = 'PICKUP' | 'STOP' | 'DROP';
 
 export interface Waypoint {
+  /** Stable unique identifier from the booking API — used in arrived-at-stop / skip-stop. */
+  waypointId?: number;
+  /** Legacy field — some older API responses use `id` instead of `waypointId`. */
   id?: number;
   waypointSequence?: number;
-  /** Some API versions return `type` instead of `waypointType` */
+  /** Some API versions return `waypointType` instead of `type` */
   waypointType?: WaypointType;
   type?: WaypointType;
   latitude: number;
   longitude: number;
   address: string;
+  /** Google Places ID — primary matching key against location-update waypoint. */
+  placeId?: string;
   arrivedAt?: string | null;
   status?: string;
 }

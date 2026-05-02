@@ -1,5 +1,5 @@
 import * as Location from 'expo-location';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import { setActiveBookingVehicleId, removeActiveBookingVehicleId, getActiveBookingVehicleId, getAccessToken } from '../storage/tokenStorage';
 import { LOCATION_TASK_NAME } from '../services/locationTask';
@@ -10,6 +10,8 @@ import { updateDriverLocation } from '../services/rideService';
 interface UseLocationSyncOptions {
   /** Called when the backend reports arrival at the current waypoint. */
   onArrived?: () => void;
+  /** Called on every successful location update response (background or manual). */
+  onLocationUpdate?: () => void;
 }
 
 /**
@@ -21,6 +23,11 @@ interface UseLocationSyncOptions {
 export function useLocationSync(bookingVehicleId: string | undefined, options?: UseLocationSyncOptions) {
   const setSyncResponse = useLocationStore((state) => state.setSyncResponse);
 
+  // Keep callbacks in a ref so the event listener never needs to re-subscribe
+  // when the parent re-renders with new function identities.
+  const callbacksRef = useRef(options);
+  useEffect(() => { callbacksRef.current = options; });
+
   // Listen for native events from the background task (since Zustand stores aren't
   // shared between main JS and background task JS contexts on Android).
   useEffect(() => {
@@ -28,13 +35,14 @@ export function useLocationSync(bookingVehicleId: string | undefined, options?: 
       console.log('[useLocationSync] 📬 Received Native Update:', data.waypoint?.type, 'arrived:', data.arrived);
       setSyncResponse(data);
 
-      // Fire the onArrived callback when backend signals arrival
-      if (data.arrived && options?.onArrived) {
-        options.onArrived();
+      callbacksRef.current?.onLocationUpdate?.();
+
+      if (data.arrived) {
+        callbacksRef.current?.onArrived?.();
       }
     });
     return () => sub.remove();
-  }, [setSyncResponse, options?.onArrived]);
+  }, [setSyncResponse]);
 
   const startSync = useCallback(async () => {
     if (!bookingVehicleId) return;
@@ -106,16 +114,16 @@ export function useLocationSync(bookingVehicleId: string | undefined, options?: 
           };
           useLocationStore.getState().setSyncResponse(syncData);
 
-          // Fire arrival callback on initial tick too
-          if (resp.arrived && options?.onArrived) {
-            options.onArrived();
+          callbacksRef.current?.onLocationUpdate?.();
+          if (resp.arrived) {
+            callbacksRef.current?.onArrived?.();
           }
         }
       })();
     } catch (err) {
       console.error('[useLocationSync] Failed to start background tracking:', err);
     }
-  }, [bookingVehicleId, options?.onArrived]);
+  }, [bookingVehicleId]);
 
   const stopSync = useCallback(async () => {
     try {
@@ -148,6 +156,7 @@ export function useLocationSync(bookingVehicleId: string | undefined, options?: 
         rideStartTime: resp.rideStartTime,
         arrived: resp.arrived ?? false,
       });
+      callbacksRef.current?.onLocationUpdate?.();
     } catch (err) {
       console.warn('[useLocationSync] sendLocationUpdate failed:', err);
     }
