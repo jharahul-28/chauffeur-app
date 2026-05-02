@@ -138,8 +138,7 @@ export default function DriverHomeScreen() {
 
   const syncOptions = useMemo(() => ({
     onArrived: handleBackgroundArrival,
-    onLocationUpdate: refetchBooking,
-  }), [handleBackgroundArrival, refetchBooking]);
+  }), [handleBackgroundArrival]);
 
   const { startSync, stopSync, nextWaypoint, sendLocationUpdate } = useLocationSync(bookingVehicleId, syncOptions);
   const isPickupMode = Boolean(bookingId);
@@ -172,9 +171,11 @@ export default function DriverHomeScreen() {
 
       if (initialRideStatus === 'GOING_TO_PICKUP') {
         if (!bookingStatus || bookingStatus === 'ASSIGNED') {
-          postDriverOnTheWay(bookingVehicleId).catch((err) =>
-            console.error('[driver-home] postDriverOnTheWay failed:', err)
-          );
+          postDriverOnTheWay(bookingVehicleId)
+            .then(() => sendLocationUpdate())
+            .catch((err) =>
+              console.error('[driver-home] postDriverOnTheWay failed:', err)
+            );
         }
       } else {
         updateStatus(initialRideStatus);
@@ -223,18 +224,12 @@ export default function DriverHomeScreen() {
       return;
     }
 
-    const isTrackingAllowed = ride.status !== 'GOING_TO_PICKUP';
+    const isTrackingAllowed = true;
 
     if (isTrackingAllowed) {
       if (syncedRideIdRef.current !== ride.bookingVehicleId) {
         syncedRideIdRef.current = ride.bookingVehicleId;
         startSync();
-      }
-    } else {
-      // If we're in GOING_TO_PICKUP, ensure sync is stopped
-      if (syncedRideIdRef.current) {
-        stopSync();
-        syncedRideIdRef.current = null;
       }
     }
 
@@ -292,6 +287,7 @@ export default function DriverHomeScreen() {
     try {
       await postArrived(ride.bookingVehicleId);
       updateStatus('ARRIVED_AT_PICKUP');
+      sendLocationUpdate();
     } catch (err) {
       console.error('[driver-home] postArrived failed:', err);
       showAlert({ title: 'Error', message: getErrorMessage(err, 'Failed to confirm arrival. Please try again.'), buttons: [{ text: 'OK', onPress: () => { }, type: 'primary' }] });
@@ -327,6 +323,7 @@ export default function DriverHomeScreen() {
   const handleVerifyOtp = useCallback(async (otp: string) => {
     if (!ride?.bookingVehicleId) throw new Error('No active ride');
     const response = await postVerifyOtp(ride.bookingVehicleId, otp);
+    sendLocationUpdate();
 
     // Immediate calculation for timer screen
     if (response.rideStartTime) {
@@ -354,6 +351,7 @@ export default function DriverHomeScreen() {
     stopWaiting();
 
     try {
+      sendLocationUpdate(); // Send final location before ending
       await postEndRide(ride.bookingVehicleId);
       await removeRideStartTime();
       stopSync(); // Stop tracking immediately to avoid pings for ended ride

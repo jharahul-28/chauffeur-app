@@ -80,8 +80,8 @@ export function useLocationSync(bookingVehicleId: string | undefined, options?: 
 
       await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
         accuracy: Location.Accuracy.BestForNavigation,
-        timeInterval: 30000, // 30 seconds
-        distanceInterval: 0, // We use time-based throttling in the task now
+        timeInterval: 10000, // Request from OS every 10s to ensure we have fresh data for the 30s gate
+        distanceInterval: 0,
         // Android Specific: Keeps the app process alive after kill
         foregroundService: {
           notificationTitle: 'Trip Tracking Active',

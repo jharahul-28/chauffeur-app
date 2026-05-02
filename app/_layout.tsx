@@ -39,7 +39,6 @@ export default function RootLayout() {
         <UpdateManager />
         <Stack screenOptions={{ headerShown: false }} />
         <GlobalLoader />
-        <NetworkLoggerFAB />
       </AlertProvider>
     </GestureHandlerRootView>
   );

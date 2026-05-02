@@ -13,7 +13,7 @@ import { DeviceEventEmitter } from 'react-native';
 export const LOCATION_TASK_NAME = 'BACKGROUND_LOCATION_SYNC';
 
 let lastSyncTimestamp = 0;
-const MIN_SYNC_INTERVAL_MS = 28000; // Strict 30s throttle (allowing 2s buffer)
+const MIN_SYNC_INTERVAL_MS = 30000; // STRICT 30s throttle. Never sends before 30s.
 
 /**
  * Global task definition for background location tracking.
