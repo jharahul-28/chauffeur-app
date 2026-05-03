@@ -18,7 +18,7 @@ import ChargeModal from '../../src/components/ChargeModal';
 import ChargesSummaryModal from '../../src/components/ChargesSummaryModal';
 import SlideToConfirm from '../../src/components/SlideToConfirm';
 import HeaderBackButton from '../../src/components/HeaderBackButton';
-import { useHourlyTimer } from '../../src/hooks/useHourlyTimer';
+import { useHourlyTimer, computeHourlyStartTime } from '../../src/hooks/useHourlyTimer';
 import { useHourlyLocationSync } from '../../src/hooks/useHourlyLocationSync';
 import { useBookingDetail } from '../../src/hooks/useBookingDetail';
 import { useCharges } from '../../src/hooks/useCharges';
@@ -69,7 +69,7 @@ export default function HourlyRideScreen() {
   // driver-home) so the countdown shows at once without waiting for the first
   // hourly-ride API tick. The synced value takes over as soon as it arrives.
   const storedRideStartTime = useLocationStore((s) => s.rideStartTime);
-  const rideStartTime = syncedRideStartTime ?? storedRideStartTime;
+  const rawServerStartTime = syncedRideStartTime ?? storedRideStartTime;
 
   // Pull hourly fields from the detail response
   const detail = ride as (typeof ride & { hourlyPackage?: HourlyPackage }) | null;
@@ -78,7 +78,18 @@ export default function HourlyRideScreen() {
   const packageKm = hourlyPkg?.hourlyPackageDetails?.km;
   const traveledKm = hourlyPkg?.hourlyPackageDetails?.hourlyTravelStats?.totalTraveledKm ?? 0;
 
-  // ── Timer — driven by rideStartTime from live location-update API ──────────
+  // arrivedAt from the pickup waypoint — the moment the driver actually reached the customer
+  const pickupArrivedAt = detail?.rawWaypoints?.find((w) => w.waypointType === 'PICKUP')?.arrivedAt ?? null;
+
+  // Timer anchor = MAX(arrivedAt, scheduledPickupDateTime); falls back to server value
+  const rideStartTime = computeHourlyStartTime({
+    arrivedAt: pickupArrivedAt,
+    rideDate: detail?.rideDate ?? null,
+    pickupTime: detail?.pickupTime ?? null,
+    serverRideStartTime: rawServerStartTime,
+  });
+
+  // ── Timer — anchored to MAX(arrivedAt, scheduledPickupDateTime) ───────────
   const { formattedTime, isExpired, rawMilliseconds, endTime } = useHourlyTimer({
     rideStartTime,
     hours,

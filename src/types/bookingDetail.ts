@@ -82,6 +82,9 @@ export interface BookingDetailResponse {
     vehicleNumber: string;
     rideStartTime: string | null;
     hourlyPackage?: HourlyPackage;
-    metadata?: any;
+    metadata?: {
+      freeMinutes?: number;
+      [key: string]: unknown;
+    };
   }[];
 }

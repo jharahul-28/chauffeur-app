@@ -55,6 +55,47 @@ export function formatHourlyDuration(ms: number): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+// ─── Start time computation ───────────────────────────────────────────────────
+
+/**
+ * Returns the correct hourly timer start time as:
+ *   MAX(arrivedAt of pickup waypoint, scheduledPickupDateTime)
+ *
+ * Falls back to serverRideStartTime when local data is unavailable.
+ * Returns null when no valid anchor can be derived.
+ */
+export function computeHourlyStartTime(params: {
+  arrivedAt: string | null | undefined;
+  rideDate: string | null | undefined;
+  pickupTime: string | null | undefined;
+  serverRideStartTime: string | null | undefined;
+}): string | null {
+  const { arrivedAt, rideDate, pickupTime, serverRideStartTime } = params;
+
+  const scheduledStart =
+    rideDate && pickupTime ? new Date(`${rideDate}T${pickupTime}`) : null;
+  const actualStart = arrivedAt ? new Date(arrivedAt) : null;
+
+  const isValidDate = (d: Date | null): d is Date => d !== null && !isNaN(d.getTime());
+
+  if (isValidDate(scheduledStart) && isValidDate(actualStart)) {
+    const anchor = actualStart > scheduledStart ? actualStart : scheduledStart;
+    // Return in "YYYY-MM-DD HH:mm:ss" format matching parseRideStartTime expectations
+    const iso = anchor.toISOString().replace('T', ' ').substring(0, 19);
+    return iso;
+  }
+
+  if (isValidDate(actualStart)) {
+    return actualStart.toISOString().replace('T', ' ').substring(0, 19);
+  }
+
+  if (isValidDate(scheduledStart)) {
+    return scheduledStart.toISOString().replace('T', ' ').substring(0, 19);
+  }
+
+  return serverRideStartTime ?? null;
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 interface UseHourlyTimerParams {

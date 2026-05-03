@@ -22,6 +22,16 @@ import { useBookings } from '@/src/hooks/useBookings';
 import { getActionForBooking } from '@/src/utils/bookingNavigationMapper';
 import { useRideStore } from '@/src/state/useRideStore';
 
+// ─── CTA confirmation messages ────────────────────────────────────────────────
+
+const CTA_CONFIRM_MESSAGES: Record<string, string> = {
+  'Go To Pickup': 'Start navigation to pickup location?',
+  'Enter OTP': 'Proceed to verify customer OTP?',
+  'Go To Destination': 'Start trip towards destination?',
+  'View Hourly Ride': 'Start trip towards destination?',
+  'Payment': 'Proceed to payment screen?',
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function BookingsScreen() {
@@ -70,20 +80,33 @@ export default function BookingsScreen() {
     }, [refetch, showAlert])
   );
 
-  const handleBookingAction = (booking: Booking) => {
-    if (isNavigating.current) return;
+  const executeBookingAction = (booking: Booking) => {
     const action = getActionForBooking(booking.bookingId, booking.id, booking.status, booking.tripType);
     if (!action) return;
-    
-    // Clear old ride state before starting/resuming a new one
     useRideStore.getState().clearRide();
-    
     isNavigating.current = true;
     router.push({
       pathname: action.navigationTarget as never,
       params: action.params,
     });
     setTimeout(() => { isNavigating.current = false; }, 1000);
+  };
+
+  const handleBookingAction = (booking: Booking) => {
+    if (isNavigating.current) return;
+    const action = getActionForBooking(booking.bookingId, booking.id, booking.status, booking.tripType);
+    if (!action) return;
+
+    const message = CTA_CONFIRM_MESSAGES[action.buttonText] ?? `Proceed with ${action.buttonText}?`;
+
+    showAlert({
+      title: action.buttonText,
+      message,
+      buttons: [
+        { text: 'Cancel', onPress: () => {}, type: 'secondary' },
+        { text: 'Confirm', onPress: () => executeBookingAction(booking), type: 'primary' },
+      ],
+    });
   };
 
   const handlePastBookingPress = (booking: Booking) => {

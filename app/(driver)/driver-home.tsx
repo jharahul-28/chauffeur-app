@@ -151,6 +151,8 @@ export default function DriverHomeScreen() {
   const { charges, fetchCharges, saveCharges } = useCharges(bookingVehicleId);
 
   // ── Wait timer ────────────────────────────────────────────────────────────
+  // freeWaitSeconds derived from API; defaults to 0 until booking detail loads
+  const freeWaitSeconds = (bookingDetailRide?.freeWaitMinutes ?? 0) * 60;
   const {
     isWaiting,
     elapsedTime,
@@ -160,7 +162,7 @@ export default function DriverHomeScreen() {
     stopWaiting,
     resetTimer: resetWaitTimer,
     syncWithServer,
-  } = useWaitTimer(bookingVehicleId);
+  } = useWaitTimer(bookingVehicleId, freeWaitSeconds);
 
   /**
    * Fetch /waiting-timer and feed the result into the hook.

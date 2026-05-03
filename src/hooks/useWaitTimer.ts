@@ -3,16 +3,15 @@ import { AppState, AppStateStatus } from 'react-native';
 import { formatCountdown, formatHHMMSS } from '../utils/timeUtils';
 import { fetchWaitingTimer } from '../services/rideService';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const FREE_WAIT_SECONDS = 180; // 3 minutes free wait per trip
-
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 /**
  * Manages wait-timer state for an active ride — backend-driven design.
+ *
+ * freeWaitSeconds: API-driven free wait window from vehicles[0].metadata.freeMinutes.
+ * Defaults to 0 (billing starts immediately) when not provided by the API.
  */
-export function useWaitTimer(bookingVehicleId?: string) {
+export function useWaitTimer(bookingVehicleId?: string, freeWaitSeconds = 0) {
   const [isWaiting, setIsWaiting] = useState(false);
   const [timerRunning, setTimerRunning] = useState(false);
 
@@ -38,8 +37,8 @@ export function useWaitTimer(bookingVehicleId?: string) {
 
   // ── Derived values ──────────────────────────────────────────────────────────
 
-  const isFreeTimeExceeded = totalWaitingSeconds >= FREE_WAIT_SECONDS;
-  const remainingFreeWaitTime = Math.max(0, FREE_WAIT_SECONDS - totalWaitingSeconds);
+  const isFreeTimeExceeded = totalWaitingSeconds >= freeWaitSeconds;
+  const remainingFreeWaitTime = Math.max(0, freeWaitSeconds - totalWaitingSeconds);
   /** mm:ss — kept for legacy callers */
   const formattedTime = formatCountdown(currentSeconds);
   /** HH:mm:ss — preferred for UI; uses backend string when freshly synced */

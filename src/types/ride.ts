@@ -85,4 +85,6 @@ export interface ActiveRide {
   rideStartTime?: string | null;
   /** Present when tripType === 'HOURLY_RENTALS' */
   hourlyPackage?: HourlyPackage;
+  /** Free wait minutes from vehicles[0].metadata.freeMinutes — 0 when not set */
+  freeWaitMinutes: number;
 }

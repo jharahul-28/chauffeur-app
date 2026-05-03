@@ -12,6 +12,10 @@ export interface AdditionalCharges {
   mcFare: number;
   waitingCharge: number;
   parkingCharge: number;
+  tollCharge?: number;
+  extraKmCharge?: number;
+  extraTimeCharge?: number;
+  totalWaitingCharge?: number;
 }
 
 // ─── Booking Billing ──────────────────────────────────────────────────────────

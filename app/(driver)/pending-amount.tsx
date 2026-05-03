@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -22,6 +21,7 @@ import { useCharges } from '../../src/hooks/useCharges';
 import { postCompletePayment } from '../../src/services/rideService';
 import { getBookingDetails } from '../../src/services/bookingApi';
 import { getErrorMessage } from '../../src/utils/apiErrorParser';
+import { useAlert } from '../../src/context/AlertContext';
 
 // ─── Screen params ────────────────────────────────────────────────────────────
 
@@ -40,6 +40,7 @@ interface PendingAmountParams {
 export default function PendingAmountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { showAlert } = useAlert();
   const {
     bookingVehicleId,
     riderName = 'Rider',
@@ -52,6 +53,7 @@ export default function PendingAmountScreen() {
   const [balanceAmount, setBalanceAmount] = useState<number | null>(
     balanceAmountParam ? parseFloat(balanceAmountParam) : null,
   );
+  const [waitingCharge, setWaitingCharge] = useState<number>(0);
 
   // ── Payment state ─────────────────────────────────────────────────────────
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
@@ -69,6 +71,8 @@ export default function PendingAmountScreen() {
     try {
       const billing = await getBookingDetails(bookingVehicleId);
       setBalanceAmount(billing.balanceAmount);
+      const wc = billing.additionalCharges?.totalWaitingCharge ?? 0;
+      setWaitingCharge(wc > 0 ? wc : 0);
     } catch {
       // balance display stays as-is; non-critical
     }
@@ -140,45 +144,41 @@ export default function PendingAmountScreen() {
     } catch (err) {
       console.error('[pending-amount] completePayment (PAID) failed:', err);
       const message = getErrorMessage(err, 'Failed to record payment. Please try again.');
-      Alert.alert('Payment Error', message);
+      showAlert({ title: 'Payment Error', message, buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
     } finally {
       setIsSubmittingPayment(false);
     }
   }, [bookingVehicleId, router]);
 
-  // "Unpaid" — direct API call after confirmation, no modal
+  const executeUnpaid = useCallback(async () => {
+    if (!bookingVehicleId) return;
+    setIsSubmittingPayment(true);
+    try {
+      await postCompletePayment(bookingVehicleId, { paymentStatus: 'UNPAID' });
+      setTimeout(() => {
+        router.replace('/(driver)/(tabs)/bookings');
+      }, 100);
+    } catch (err) {
+      console.error('[pending-amount] completePayment (UNPAID) failed:', err);
+      const message = getErrorMessage(err, 'Failed to record payment. Please try again.');
+      showAlert({ title: 'Payment Error', message, buttons: [{ text: 'OK', onPress: () => {}, type: 'primary' }] });
+    } finally {
+      setIsSubmittingPayment(false);
+    }
+  }, [bookingVehicleId, router, showAlert]);
+
+  // "Unpaid" — confirmation dialog then API call
   const handleUnpaid = useCallback(() => {
     if (isSubmittingPayment) return;
-    Alert.alert(
-      'Mark as Unpaid?',
-      'This will record the trip as unpaid. Are you sure?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          style: 'destructive',
-          onPress: async () => {
-            if (!bookingVehicleId) return;
-            setIsSubmittingPayment(true);
-            try {
-              await postCompletePayment(bookingVehicleId, { paymentStatus: 'UNPAID' });
-              
-              // Delay navigation slightly to let the Alert finish its closing animation
-              setTimeout(() => {
-                router.replace('/(driver)/(tabs)/bookings');
-              }, 100);
-            } catch (err) {
-              console.error('[pending-amount] completePayment (UNPAID) failed:', err);
-              const message = getErrorMessage(err, 'Failed to record payment. Please try again.');
-              Alert.alert('Payment Error', message);
-            } finally {
-              setIsSubmittingPayment(false);
-            }
-          },
-        },
+    showAlert({
+      title: 'Confirm Payment Status',
+      message: 'Mark this ride as unpaid?',
+      buttons: [
+        { text: 'Cancel', onPress: () => {}, type: 'secondary' },
+        { text: 'Confirm', onPress: executeUnpaid, type: 'primary' },
       ],
-    );
-  }, [bookingVehicleId, isSubmittingPayment, router]);
+    });
+  }, [isSubmittingPayment, showAlert, executeUnpaid]);
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -241,9 +241,9 @@ export default function PendingAmountScreen() {
         </View>
 
         {/* ── Charges breakdown ─────────────────────────────────────────────── */}
-        {groupedCharges.length > 0 && (
+        {(groupedCharges.length > 0 || waitingCharge > 0) && (
           <View style={styles.chargesCard}>
-            <Text style={styles.chargesCardTitle}>Extra Charges Breakdown</Text>
+            <Text style={styles.chargesCardTitle}>Additional Charges</Text>
 
             {groupedCharges.map(({ type, displayName, entries }) => (
               <View key={type} style={styles.chargeGroup}>
@@ -259,10 +259,21 @@ export default function PendingAmountScreen() {
               </View>
             ))}
 
+            {waitingCharge > 0 && (
+              <View style={styles.chargeGroup}>
+                <View style={styles.waitingChargeRow}>
+                  <Text style={styles.chargeGroupLabel}>Waiting Charge</Text>
+                  <Text style={styles.waitingChargeValue}>
+                    ₹{waitingCharge.toLocaleString('en-IN')}
+                  </Text>
+                </View>
+              </View>
+            )}
+
             <View style={styles.chargesTotalRow}>
               <Text style={styles.chargesTotalLabel}>Total Extra</Text>
               <Text style={styles.chargesTotalValue}>
-                ₹{totalExtraCharges.toLocaleString('en-IN')}
+                ₹{(totalExtraCharges + waitingCharge).toLocaleString('en-IN')}
               </Text>
             </View>
           </View>
@@ -515,6 +526,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#3A3A3C',
   },
   chargeEntryAmount: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  waitingChargeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  waitingChargeValue: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '600',

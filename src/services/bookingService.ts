@@ -147,5 +147,6 @@ export function mapBookingDetailToRide(
         rideDate: detail.rideDate ?? null,
         pickupTime: detail.pickupTime ?? null,
         hourlyPackage: detail.vehicles?.[0]?.hourlyPackage ?? detail.hourlyPackage ?? undefined,
+        freeWaitMinutes: detail.vehicles?.[0]?.metadata?.freeMinutes ?? 0,
     };
 }
